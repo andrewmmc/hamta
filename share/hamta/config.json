@@ -5,6 +5,5 @@
   "verify": {
     "enabled": true,
     "expected_country": "JP"
-  },
-  "prompt": true
+  }
 }

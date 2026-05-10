@@ -72,8 +72,7 @@ init_config() {
   "verify": {
     "enabled": true,
     "expected_country": "JP"
-  },
-  "prompt": true
+  }
 }
 JSONEOF
     fi
@@ -93,7 +92,6 @@ load_config() {
     PROXY_URL=$(jq -r '.proxy.url' "$CONFIG_FILE")
     VERIFY_ENABLED=$(jq -r '.verify.enabled' "$CONFIG_FILE")
     EXPECTED_COUNTRY=$(jq -r '.verify.expected_country' "$CONFIG_FILE")
-    PROMPT=$(jq -r '.prompt' "$CONFIG_FILE")
 }
 
 init_if_missing() {
@@ -139,16 +137,6 @@ verify_proxy() {
     echo -e "  Country: ${GREEN}$country${NC} ✓"
 }
 
-prompt_user() {
-    echo ""
-    local answer
-    read -r -p "Continue to run ${CYAN}$*${NC}? (y/N): " answer
-    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-        echo "✖ Cancelled."
-        exit 1
-    fi
-}
-
 check_deps
 
 case "${1:-}" in
@@ -189,10 +177,6 @@ set_proxy_env
 
 if [[ "$VERIFY_ENABLED" == "true" ]]; then
     verify_proxy
-fi
-
-if [[ "$PROMPT" == "true" ]]; then
-    prompt_user "$CMD" "$@"
 fi
 
 echo -e "▶ Running ${CYAN}$CMD${NC}..."

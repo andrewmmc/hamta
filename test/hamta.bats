@@ -95,7 +95,7 @@ teardown() {
 
 @test "unknown command dies with error" {
   mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"},"prompt":true}' \
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
     > "$HOME/.config/hamta/config.json"
   run "$HAMTA" nonexistentcommand12345
   [ "$status" -eq 1 ]
@@ -120,11 +120,11 @@ teardown() {
   [[ "$output" =~ "not set" ]]
 }
 
-# run with verify disabled and prompt disabled -> exec path
+# run with verify disabled -> exec path
 
-@test "runs command with verify and prompt disabled" {
+@test "runs command with verify disabled" {
   mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"},"prompt":false}' \
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"}}' \
     > "$HOME/.config/hamta/config.json"
   run "$HAMTA" echo "hello world"
   [ "$status" -eq 0 ]
@@ -136,7 +136,7 @@ teardown() {
 
 @test "exports proxy environment variables" {
   mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"},"prompt":false}' \
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"}}' \
     > "$HOME/.config/hamta/config.json"
   run "$HAMTA" env
   [ "$status" -eq 0 ]
@@ -150,7 +150,7 @@ teardown() {
 
 @test "verify proxy succeeds with matching country" {
   mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"},"prompt":false}' \
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
     > "$HOME/.config/hamta/config.json"
 
   # Create a mock curl that returns JP country
@@ -173,7 +173,7 @@ MOCKEOF
 
 @test "verify proxy fails with wrong country" {
   mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"},"prompt":false}' \
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
     > "$HOME/.config/hamta/config.json"
 
   local MOCK_BIN="$TEST_DIR/mockbin"
@@ -195,7 +195,7 @@ MOCKEOF
 
 @test "verify proxy fails when curl fails" {
   mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"},"prompt":false}' \
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
     > "$HOME/.config/hamta/config.json"
 
   local MOCK_BIN="$TEST_DIR/mockbin"
@@ -209,26 +209,4 @@ MOCKEOF
   PATH="$MOCK_BIN:$PATH" run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "ipinfo.io" ]]
-}
-
-# prompt answers 'y' and continues
-
-@test "prompt with 'y' continues to run command" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"},"prompt":true}' \
-    > "$HOME/.config/hamta/config.json"
-
-  run bash -c "echo y | \"$HAMTA\" echo ok"
-  [ "$status" -eq 0 ]
-  [[ "$output" =~ "ok" ]]
-}
-
-@test "prompt with 'n' cancels" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"},"prompt":true}' \
-    > "$HOME/.config/hamta/config.json"
-
-  run bash -c "echo n | \"$HAMTA\" echo ok"
-  [ "$status" -eq 1 ]
-  [[ "$output" =~ "Cancelled" ]]
 }
