@@ -61,7 +61,7 @@ Edit `~/.config/hamta/config.json` to set your proxy URL and expected country:
 ## Usage
 
 ```bash
-hamta opencode               # run opencode through proxy
+hamta opencode                # run opencode through proxy
 hamta claude                  # run claude through proxy
 hamta npm install react       # proxy npm too
 hamta --help                  # show help
@@ -83,7 +83,7 @@ Set `verify.enabled` to `false` to skip the IP country check.
 ╰──────┬───────╯
        ▼
 ╭────────────────────────────╮
-│ Load config.json with jq    │
+│ Load config.json with jq   │
 ╰──────┬─────────────────────╯
        ▼
 ╭────────────────────────────╮
@@ -101,6 +101,6 @@ Set `verify.enabled` to `false` to skip the IP country check.
 ╰──────┬─────────────╯ │
        ▼               ▼
 ╭────────────────────────────╮
-│ exec command with args      │
+│ exec command with args     │
 ╰────────────────────────────╯
 ```
