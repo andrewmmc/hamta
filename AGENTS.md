@@ -15,6 +15,7 @@ hamta is a bash script that wraps commands in a proxy environment. Config is JSO
 
 - `bash -n bin/hamta` — syntax check
 - `bats test/hamta.bats` — full test suite (20 tests)
+- CI runs on push/PR to master: `.github/workflows/ci.yml`
 - Manual testing: `HOME=/tmp/hamta_test ./bin/hamta init`, `config`, `--help`, `--version`
 - When changing config format, verify backward-compat loading
 
