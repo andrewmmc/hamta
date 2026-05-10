@@ -2,6 +2,25 @@
 
 Run commands through a configurable proxy environment with IP verification.
 
+hamta is a small Bash wrapper for tools that should run through a local or remote proxy. It loads a JSON config, exports common proxy environment variables, optionally verifies the exit country with `ipinfo.io`, then runs your command unchanged.
+
+It is useful when you want one-off commands such as coding agents, package managers, or CLIs to use a proxy without changing your whole shell session.
+
+## Quick setup
+
+```bash
+git clone https://github.com/andrewmmc/hamta.git
+cd hamta
+make install PREFIX=$HOME/.local
+
+hamta init
+$EDITOR ~/.config/hamta/config.json
+
+hamta curl https://ipinfo.io
+```
+
+Make sure `$HOME/.local/bin` is on your `PATH` if you use the user-local install.
+
 ## Install
 
 ```bash
@@ -49,3 +68,33 @@ On each run, hamta will:
 3. Execute the command
 
 Set `verify.enabled` to `false` to skip the IP country check.
+
+## Flow
+
+```diagram
+╭──────────────╮
+│ hamta <cmd>  │
+╰──────┬───────╯
+       ▼
+╭────────────────────────────╮
+│ Load config.json with jq    │
+╰──────┬─────────────────────╯
+       ▼
+╭────────────────────────────╮
+│ Export proxy env variables │
+╰──────┬─────────────────────╯
+       ▼
+╭────────────────────────────╮
+│ verify.enabled?            │
+╰──────┬───────────────┬─────╯
+       │ yes           │ no
+       ▼               │
+╭────────────────────╮ │
+│ Check ipinfo.io    │ │
+│ country matches?   │ │
+╰──────┬─────────────╯ │
+       ▼               ▼
+╭────────────────────────────╮
+│ exec command with args      │
+╰────────────────────────────╯
+```
