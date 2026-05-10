@@ -11,12 +11,6 @@ make install                 # to /usr/local/bin
 make install PREFIX=$HOME/.local  # user-local install
 ```
 
-Or via Homebrew:
-
-```bash
-brew install --build-from-source ./Formula/hamta.rb
-```
-
 Requires `jq` and `curl`.
 
 ## Setup
@@ -35,8 +29,7 @@ Edit `~/.config/hamta/config.json` to set your proxy URL and expected country:
   "verify": {
     "enabled": true,
     "expected_country": "JP"
-  },
-  "prompt": true
+  }
 }
 ```
 
@@ -53,7 +46,6 @@ hamta config                  # print current config
 On each run, hamta will:
 1. Set proxy environment variables (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, npm_config_proxy, etc.)
 2. Verify the proxy is working by checking your IP country via `ipinfo.io`
-3. Prompt for confirmation (y/N)
-4. Execute the command
+3. Execute the command
 
-Set `verify.enabled` to `false` to skip the IP country check. Set `prompt` to `false` to run without confirmation.
+Set `verify.enabled` to `false` to skip the IP country check.

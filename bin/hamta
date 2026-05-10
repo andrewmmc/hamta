@@ -53,6 +53,28 @@ check_deps() {
     fi
 }
 
+default_config_src() {
+    local script="$0"
+    local dir
+    local target
+
+    if [[ "$script" != */* ]]; then
+        script="$(command -v "$script")"
+    fi
+
+    while [[ -L "$script" ]]; do
+        dir="$(cd -P "$(dirname "$script")" >/dev/null 2>&1 && pwd)"
+        target="$(readlink "$script")"
+        if [[ "$target" != /* ]]; then
+            target="$dir/$target"
+        fi
+        script="$target"
+    done
+
+    dir="$(cd -P "$(dirname "$script")" >/dev/null 2>&1 && pwd)"
+    printf '%s/share/hamta/config.json\n' "$(dirname "$dir")"
+}
+
 init_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
         echo "Config already exists at $CONFIG_FILE"
@@ -60,7 +82,7 @@ init_config() {
     fi
     mkdir -p "$CONFIG_DIR"
     local src
-    src="$(dirname "$(dirname "$(readlink -f "$0")")")/share/hamta/config.json"
+    src="$(default_config_src)"
     if [[ -f "$src" ]]; then
         cp "$src" "$CONFIG_FILE"
     else
@@ -89,9 +111,34 @@ load_config() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         die "Config not found at $CONFIG_FILE. Run 'hamta init' first."
     fi
+
+    if ! jq empty "$CONFIG_FILE" >/dev/null 2>&1; then
+        die "Config is not valid JSON: $CONFIG_FILE"
+    fi
+
+    local proxy_type
+    proxy_type="$(jq -r 'try (.proxy.url | type) catch "invalid"' "$CONFIG_FILE")"
+    if [[ "$proxy_type" == "null" ]]; then
+        die "proxy.url is not set in $CONFIG_FILE"
+    fi
+    if [[ "$proxy_type" != "string" ]]; then
+        die "proxy.url must be a non-empty string in $CONFIG_FILE"
+    fi
+
     PROXY_URL=$(jq -r '.proxy.url' "$CONFIG_FILE")
-    VERIFY_ENABLED=$(jq -r '.verify.enabled' "$CONFIG_FILE")
-    EXPECTED_COUNTRY=$(jq -r '.verify.expected_country' "$CONFIG_FILE")
+
+    if [[ "$(jq -r 'try ((.verify.enabled // false) | type) catch "invalid"' "$CONFIG_FILE")" != "boolean" ]]; then
+        die "verify.enabled must be true or false in $CONFIG_FILE"
+    fi
+
+    VERIFY_ENABLED=$(jq -r '.verify.enabled // false' "$CONFIG_FILE")
+    EXPECTED_COUNTRY=$(jq -r 'try (.verify.expected_country // empty) catch empty' "$CONFIG_FILE")
+
+    if [[ "$VERIFY_ENABLED" == "true" ]]; then
+        if [[ "$(jq -r 'try (.verify.expected_country | type) catch "invalid"' "$CONFIG_FILE")" != "string" || -z "$EXPECTED_COUNTRY" ]]; then
+            die "verify.expected_country must be a non-empty string when verify.enabled is true in $CONFIG_FILE"
+        fi
+    fi
 }
 
 init_if_missing() {

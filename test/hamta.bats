@@ -120,6 +120,40 @@ teardown() {
   [[ "$output" =~ "not set" ]]
 }
 
+@test "dies when config is invalid JSON" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{invalid json' > "$HOME/.config/hamta/config.json"
+  run "$HAMTA" true
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "not valid JSON" ]]
+}
+
+@test "dies when proxy.url is not a string" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":1087}}' > "$HOME/.config/hamta/config.json"
+  run "$HAMTA" true
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "proxy.url" ]]
+}
+
+@test "dies when verify.enabled is not a boolean" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":"yes","expected_country":"JP"}}' \
+    > "$HOME/.config/hamta/config.json"
+  run "$HAMTA" true
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "verify.enabled" ]]
+}
+
+@test "dies when verify is enabled without expected country" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true}}' \
+    > "$HOME/.config/hamta/config.json"
+  run "$HAMTA" true
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "verify.expected_country" ]]
+}
+
 # run with verify disabled -> exec path
 
 @test "runs command with verify disabled" {
