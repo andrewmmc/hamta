@@ -1,11 +1,13 @@
 class Hamta < Formula
   desc "Run commands through a configurable proxy environment"
   homepage "https://github.com/andrewmmc/hamta"
-  head "https://github.com/andrewmmc/hamta.git", branch: "master"
+  url "https://github.com/andrewmmc/hamta/archive/refs/tags/v0.1.0.tar.gz"
+  sha256 "ec10c51e14cc63ca95f888d15299f4dbebe23c740e6dd5f49bdda652ca95f3c6"
   license "MIT"
+  head "https://github.com/andrewmmc/hamta.git", branch: "master"
 
-  depends_on "jq"
   depends_on "curl"
+  depends_on "jq"
 
   def install
     bin.install "bin/hamta"
@@ -20,6 +22,6 @@ class Hamta < Formula
   end
 
   test do
-    system "#{bin}/hamta", "--version"
+    assert_match "hamta #{version}", shell_output("#{bin}/hamta --version")
   end
 end

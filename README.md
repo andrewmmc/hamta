@@ -9,9 +9,7 @@ It is useful when you want one-off commands such as coding agents, package manag
 ## Quick setup
 
 ```bash
-git clone https://github.com/andrewmmc/hamta.git
-cd hamta
-make install PREFIX=$HOME/.local
+brew install andrewmmc/tap/hamta
 
 hamta init
 $EDITOR ~/.config/hamta/config.json
@@ -19,9 +17,15 @@ $EDITOR ~/.config/hamta/config.json
 hamta curl https://ipinfo.io
 ```
 
-Make sure `$HOME/.local/bin` is on your `PATH` if you use the user-local install.
-
 ## Install
+
+With Homebrew:
+
+```bash
+brew install andrewmmc/tap/hamta
+```
+
+From source:
 
 ```bash
 git clone https://github.com/andrewmmc/hamta.git
@@ -29,6 +33,8 @@ cd hamta
 make install                 # to /usr/local/bin
 make install PREFIX=$HOME/.local  # user-local install
 ```
+
+Make sure `$HOME/.local/bin` is on your `PATH` if you use the user-local install.
 
 Requires `jq` and `curl`.
 
