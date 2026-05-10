@@ -13,7 +13,8 @@ hamta is a bash script that wraps commands in a proxy environment. Config is JSO
 
 ## Testing
 
-- Use `bash -n bin/hamta` for syntax checking
+- `bash -n bin/hamta` — syntax check
+- `bats test/hamta.bats` — full test suite (20 tests)
 - Manual testing: `HOME=/tmp/hamta_test ./bin/hamta init`, `config`, `--help`, `--version`
 - When changing config format, verify backward-compat loading
 
