@@ -1,0 +1,10 @@
+{
+  "proxy": {
+    "url": "http://127.0.0.1:1087"
+  },
+  "verify": {
+    "enabled": true,
+    "expected_country": "JP"
+  },
+  "prompt": true
+}

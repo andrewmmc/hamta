@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1.0"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+usage() {
+    cat <<EOF
+hamta - Run commands through a proxy environment.
+
+Usage: hamta <command> [args...]
+       hamta --help
+       hamta --version
+       hamta config
+
+Options:
+  --help      Show this help message
+  --version   Show version
+  config      Print current configuration
+  init        Create default config at ~/.config/hamta/config.json
+
+Config file: ~/.config/hamta/config.json
+EOF
+    exit 0
+}
+
+die() {
+    echo -e "${RED}Error:${NC} $*" >&2
+    exit 1
+}
+
+warn() {
+    echo -e "${YELLOW}Warning:${NC} $*" >&2
+}
+
+check_deps() {
+    local missing=()
+    if ! command -v jq &>/dev/null; then
+        missing+=("jq")
+    fi
+    if ! command -v curl &>/dev/null; then
+        missing+=("curl")
+    fi
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        die "Missing required dependencies: ${missing[*]}. Install them and try again."
+    fi
+}
+
+init_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo "Config already exists at $CONFIG_FILE"
+        exit 0
+    fi
+    mkdir -p "$CONFIG_DIR"
+    local src
+    src="$(dirname "$(dirname "$(readlink -f "$0")")")/share/hamta/config.json"
+    if [[ -f "$src" ]]; then
+        cp "$src" "$CONFIG_FILE"
+    else
+        cat > "$CONFIG_FILE" <<'JSONEOF'
+{
+  "proxy": {
+    "url": "http://127.0.0.1:1087"
+  },
+  "verify": {
+    "enabled": true,
+    "expected_country": "JP"
+  },
+  "prompt": true
+}
+JSONEOF
+    fi
+    echo "Config created at $CONFIG_FILE"
+    echo "Edit it to set your proxy URL and expected country."
+}
+
+show_config() {
+    init_if_missing
+    cat "$CONFIG_FILE"
+}
+
+load_config() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        die "Config not found at $CONFIG_FILE. Run 'hamta init' first."
+    fi
+    PROXY_URL=$(jq -r '.proxy.url' "$CONFIG_FILE")
+    VERIFY_ENABLED=$(jq -r '.verify.enabled' "$CONFIG_FILE")
+    EXPECTED_COUNTRY=$(jq -r '.verify.expected_country' "$CONFIG_FILE")
+    PROMPT=$(jq -r '.prompt' "$CONFIG_FILE")
+}
+
+init_if_missing() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        die "Config not found at $CONFIG_FILE. Run 'hamta init' first."
+    fi
+}
+
+set_proxy_env() {
+    export ALL_PROXY="$PROXY_URL"
+    export HTTP_PROXY="$PROXY_URL"
+    export HTTPS_PROXY="$PROXY_URL"
+    export http_proxy="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
+    export npm_config_proxy="$PROXY_URL"
+    export npm_config_https_proxy="$PROXY_URL"
+    export NODE_USE_ENV_PROXY=1
+}
+
+verify_proxy() {
+    echo -e "${CYAN}HTTP_PROXY${NC}  $HTTP_PROXY"
+    echo -e "${CYAN}HTTPS_PROXY${NC} $HTTPS_PROXY"
+    echo ""
+
+    echo -e "▶ Running IP check via ${CYAN}ipinfo.io${NC}..."
+    local ip_info
+    if ! ip_info=$(curl -s --max-time 10 ipinfo.io); then
+        die "Failed to reach ipinfo.io. Is the proxy running at $PROXY_URL?"
+    fi
+
+    echo "$ip_info"
+
+    local country
+    country=$(echo "$ip_info" | jq -r '.country // empty')
+    if [[ -z "$country" ]]; then
+        die "Could not determine country from ipinfo.io response."
+    fi
+
+    if [[ "$country" != "$EXPECTED_COUNTRY" ]]; then
+        die "${RED}Country mismatch:${NC} expected ${GREEN}$EXPECTED_COUNTRY${NC}, got ${RED}$country${NC}. Proxy may not be working."
+    fi
+
+    echo -e "  Country: ${GREEN}$country${NC} ✓"
+}
+
+prompt_user() {
+    echo ""
+    local answer
+    read -r -p "Continue to run ${CYAN}$*${NC}? (y/N): " answer
+    if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        echo "✖ Cancelled."
+        exit 1
+    fi
+}
+
+check_deps
+
+case "${1:-}" in
+    --help|-h)
+        usage
+        ;;
+    --version|-v)
+        echo "hamta $VERSION"
+        exit 0
+        ;;
+    init)
+        init_config
+        exit 0
+        ;;
+    config)
+        show_config
+        exit 0
+        ;;
+    "")
+        usage
+        ;;
+esac
+
+load_config
+
+if [[ -z "$PROXY_URL" || "$PROXY_URL" == "null" ]]; then
+    die "proxy.url is not set in $CONFIG_FILE"
+fi
+
+CMD="$1"
+shift
+
+if ! command -v "$CMD" &>/dev/null; then
+    die "Command not found: $CMD"
+fi
+
+set_proxy_env
+
+if [[ "$VERIFY_ENABLED" == "true" ]]; then
+    verify_proxy
+fi
+
+if [[ "$PROMPT" == "true" ]]; then
+    prompt_user "$CMD" "$@"
+fi
+
+echo -e "▶ Running ${CYAN}$CMD${NC}..."
+exec "$CMD" "$@"
