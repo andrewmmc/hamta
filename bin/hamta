@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="1.1.0"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
@@ -89,7 +89,8 @@ init_config() {
         cat > "$CONFIG_FILE" <<'JSONEOF'
 {
   "proxy": {
-    "url": "http://127.0.0.1:1087"
+    "url": "http://127.0.0.1:1087",
+    "mode": "env"
   },
   "verify": {
     "enabled": true,
@@ -127,6 +128,19 @@ load_config() {
 
     PROXY_URL=$(jq -r '.proxy.url' "$CONFIG_FILE")
 
+    if [[ "$(jq -r 'try ((.proxy.mode // "env") | type) catch "invalid"' "$CONFIG_FILE")" != "string" ]]; then
+        die "proxy.mode must be a string in $CONFIG_FILE"
+    fi
+
+    PROXY_MODE=$(jq -r '.proxy.mode // "env"' "$CONFIG_FILE")
+    case "$PROXY_MODE" in
+        env|proxychains)
+            ;;
+        *)
+            die "proxy.mode must be 'env' or 'proxychains' in $CONFIG_FILE"
+            ;;
+    esac
+
     if [[ "$(jq -r 'try ((.verify.enabled // false) | type) catch "invalid"' "$CONFIG_FILE")" != "boolean" ]]; then
         die "verify.enabled must be true or false in $CONFIG_FILE"
     fi
@@ -158,18 +172,112 @@ set_proxy_env() {
     export NODE_USE_ENV_PROXY=1
 }
 
+proxy_endpoint() {
+    local endpoint="$PROXY_URL"
+    endpoint="${endpoint#*://}"
+    endpoint="${endpoint%%/*}"
+    endpoint="${endpoint##*@}"
+    printf '%s' "$endpoint"
+}
+
+proxy_auth() {
+    local authority="$PROXY_URL"
+    authority="${authority#*://}"
+    authority="${authority%%/*}"
+    if [[ "$authority" != *"@"* ]]; then
+        return
+    fi
+
+    local credentials="${authority%@*}"
+    local username="${credentials%%:*}"
+    local password="${credentials#*:}"
+    if [[ -z "$username" || -z "$password" || "$username" == "$password" ]]; then
+        die "proxychains mode requires proxy credentials to use user:password format"
+    fi
+    printf ' %s %s' "$username" "$password"
+}
+
+proxychains_type() {
+    local type="${PROXY_URL%%://*}"
+    case "$type" in
+        http|socks4|socks5)
+            printf '%s' "$type"
+            ;;
+        socks5h)
+            printf 'socks5'
+            ;;
+        *)
+            die "proxychains mode requires proxy.url to start with http://, socks4://, socks5://, or socks5h://"
+            ;;
+    esac
+}
+
+proxychains_host_port() {
+    local endpoint
+    endpoint="$(proxy_endpoint)"
+    if [[ "$endpoint" == "["*"]":* ]]; then
+        local host="${endpoint%%]*}"
+        host="${host#[}"
+        local port="${endpoint##*:}"
+        printf '%s %s' "$host" "$port"
+        return
+    fi
+
+    local host="${endpoint%:*}"
+    local port="${endpoint##*:}"
+    if [[ -z "$host" || -z "$port" || "$host" == "$port" ]]; then
+        die "proxychains mode requires proxy.url to include host and port"
+    fi
+    printf '%s %s' "$host" "$port"
+}
+
+require_proxychains() {
+    if ! command -v proxychains4 &>/dev/null; then
+        die "proxy.mode is proxychains, but proxychains4 was not found. Install proxychains-ng and try again."
+    fi
+}
+
+run_with_proxychains() {
+    require_proxychains
+
+    local proxychains_config
+    proxychains_config="$(mktemp "${TMPDIR:-/tmp}/hamta-proxychains.XXXXXX")"
+    trap "rm -f '$proxychains_config'" EXIT
+
+    local proxy_type
+    proxy_type="$(proxychains_type)"
+    local host_port
+    host_port="$(proxychains_host_port)"
+    local auth
+    auth="$(proxy_auth)"
+
+    cat > "$proxychains_config" <<EOF
+strict_chain
+proxy_dns
+quiet_mode
+
+[ProxyList]
+$proxy_type $host_port$auth
+EOF
+
+    proxychains4 -f "$proxychains_config" "$CMD" "$@"
+}
+
 verify_proxy() {
     echo -e "${CYAN}HTTP_PROXY${NC}  $HTTP_PROXY"
     echo -e "${CYAN}HTTPS_PROXY${NC} $HTTPS_PROXY"
     echo ""
 
-    echo -e "▶ Running IP check via ${CYAN}ipinfo.io${NC}..."
+    echo -e "Running IP check via ${CYAN}ipinfo.io${NC}..."
     local ip_info
     if ! ip_info=$(curl -s --max-time 10 ipinfo.io); then
         die "Failed to reach ipinfo.io. Is the proxy running at $PROXY_URL?"
     fi
 
     echo "$ip_info"
+
+    local ip
+    ip=$(echo "$ip_info" | jq -r '.ip // empty')
 
     local country
     country=$(echo "$ip_info" | jq -r '.country // empty')
@@ -182,6 +290,11 @@ verify_proxy() {
     fi
 
     echo -e "  Country: ${GREEN}$country${NC} ✓"
+    if [[ -n "$ip" ]]; then
+        echo -e "${RED}Running with proxy $(proxy_endpoint); actual IP $ip ($country)${NC}"
+    else
+        echo -e "${RED}Running with proxy $(proxy_endpoint); actual IP unknown (country $country)${NC}"
+    fi
 }
 
 check_deps
@@ -220,11 +333,21 @@ if ! command -v "$CMD" &>/dev/null; then
     die "Command not found: $CMD"
 fi
 
+if [[ "$PROXY_MODE" == "proxychains" ]]; then
+    require_proxychains
+fi
+
 set_proxy_env
 
 if [[ "$VERIFY_ENABLED" == "true" ]]; then
     verify_proxy
+else
+    echo -e "${RED}Running with proxy $(proxy_endpoint)${NC}"
 fi
 
-echo -e "▶ Running ${CYAN}$CMD${NC}..."
-exec "$CMD" "$@"
+echo -e "Running ${CYAN}$CMD${NC}..."
+if [[ "$PROXY_MODE" == "proxychains" ]]; then
+    run_with_proxychains "$@"
+else
+    exec "$CMD" "$@"
+fi

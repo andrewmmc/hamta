@@ -1,6 +1,7 @@
 {
   "proxy": {
-    "url": "http://127.0.0.1:1087"
+    "url": "http://127.0.0.1:1087",
+    "mode": "env"
   },
   "verify": {
     "enabled": true,
