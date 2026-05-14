@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.1.3"
+VERSION="1.1.4"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
@@ -284,13 +284,10 @@ verify_proxy() {
     echo -e "${CYAN}HTTPS_PROXY${NC} $HTTPS_PROXY"
     echo ""
 
-    echo -e "Running IP check via ${CYAN}ipinfo.io${NC}..."
     local ip_info
     if ! ip_info=$(curl -s --max-time 10 ipinfo.io); then
         die "Failed to reach ipinfo.io. Is the proxy running at $PROXY_URL?"
     fi
-
-    echo "$ip_info"
 
     local ip
     ip=$(echo "$ip_info" | jq -r '.ip // empty')

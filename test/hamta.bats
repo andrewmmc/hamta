@@ -419,6 +419,8 @@ MOCKEOF
   [[ "$output" =~ "JP" ]]
   [[ "$output" =~ "Running with proxy" ]]
   [[ "$output" =~ "actual IP unknown" ]]
+  [[ ! "$output" =~ "Running IP check via" ]]
+  [[ ! "$output" =~ '\{"country": "JP"\}' ]]
 }
 
 @test "verify proxy shows proxy IP and country before running command" {
@@ -441,6 +443,8 @@ MOCKEOF
   PATH="$MOCK_BIN:$PATH" run "$HAMTA" true
   [ "$status" -eq 0 ]
   [[ "$output" =~ "Running with proxy 127.0.0.1:9999; actual IP 203.0.113.10 (JP)" ]]
+  [[ ! "$output" =~ "Running IP check via" ]]
+  [[ ! "$output" =~ '\{"ip": "203.0.113.10", "country": "JP"\}' ]]
 }
 
 @test "verify proxy fails with wrong country" {
