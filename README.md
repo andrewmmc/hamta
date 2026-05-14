@@ -4,7 +4,7 @@ Run commands through a configurable proxy environment with IP verification.
 
 hamta is a small Bash wrapper for tools that should run through a local or remote proxy. It loads a JSON config, exports common proxy environment variables, optionally verifies the exit country with `ipinfo.io`, then runs your command.
 
-It is useful when you want one-off commands such as coding agents, package managers, or CLIs to use a proxy without changing your whole shell session.
+It is useful when you want one-off commands such as coding agents, package managers, or CLIs to use a proxy without changing your whole shell session. You can also override the configured mode per command with `--mode env` or `--mode proxychains`.
 
 ## Quick setup
 
@@ -94,12 +94,20 @@ hamta claude
 hamta bash
 ```
 
+Override the configured mode for a single command:
+
+```bash
+hamta --mode env npm publish
+hamta --mode proxychains curl https://ifconfig.me
+hamta --mode env -- env
+```
+
 On each run, hamta will:
 
 1. Set proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, npm proxy vars, etc.) for `env` mode and for the optional verification check
 2. If `verify.enabled` is `true`, check your public IP country through `ipinfo.io`
 3. Print the proxy endpoint, and the actual public IP/country when verification is enabled
-4. Run the command directly or through `proxychains4`, depending on `proxy.mode`
+4. Run the command directly or through `proxychains4`, depending on `proxy.mode` or a `--mode` override
 
 Example output with verification enabled:
 
@@ -111,7 +119,13 @@ Running with proxy 127.0.0.1:1087; actual IP 203.0.113.10 (JP)
 Running curl...
 ```
 
-`proxy.mode` can be `env` or `proxychains`.
+`proxy.mode` can be `env` or `proxychains`. You can override it for a single invocation with `hamta --mode env ...` or `hamta --mode proxychains ...`.
+
+If the wrapped command itself starts with a flag-like token or you want to be explicit about where hamta options stop, use `--`:
+
+```bash
+hamta --mode proxychains -- curl --silent https://ipinfo.io
+```
 
 ### `env` mode
 

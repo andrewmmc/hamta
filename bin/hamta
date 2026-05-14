@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.1.2"
+VERSION="1.1.3"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
@@ -15,12 +15,13 @@ usage() {
     cat <<EOF
 hamta - Run commands through a proxy environment.
 
-Usage: hamta <command> [args...]
-       hamta --help
-       hamta --version
-       hamta config
+Usage: hamta [--mode env|proxychains] [--] <command> [args...]
+        hamta --help
+        hamta --version
+        hamta config
 
 Options:
+  --mode MODE  Override configured mode for this command only
   --help      Show this help message
   --version   Show version
   config      Print current configuration
@@ -314,28 +315,70 @@ verify_proxy() {
 
 check_deps
 
-case "${1:-}" in
-    --help|-h)
-        usage
-        ;;
-    --version|-v)
-        echo "hamta $VERSION"
-        exit 0
-        ;;
-    init)
-        init_config
-        exit 0
-        ;;
-    config)
-        show_config
-        exit 0
-        ;;
-    "")
-        usage
-        ;;
-esac
+CLI_MODE_OVERRIDE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h)
+            usage
+            ;;
+        --version|-v)
+            echo "hamta $VERSION"
+            exit 0
+            ;;
+        --mode)
+            if [[ $# -lt 2 ]]; then
+                die "--mode requires 'env' or 'proxychains'"
+            fi
+            CLI_MODE_OVERRIDE="$2"
+            shift 2
+            ;;
+        --mode=*)
+            CLI_MODE_OVERRIDE="${1#--mode=}"
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            die "Unknown option: $1"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [[ -z "${1:-}" ]]; then
+    usage
+fi
+
+if [[ -z "$CLI_MODE_OVERRIDE" ]]; then
+    case "$1" in
+        init)
+            init_config
+            exit 0
+            ;;
+        config)
+            show_config
+            exit 0
+            ;;
+    esac
+fi
 
 load_config
+
+if [[ -n "$CLI_MODE_OVERRIDE" ]]; then
+    case "$CLI_MODE_OVERRIDE" in
+        env|proxychains)
+            PROXY_MODE="$CLI_MODE_OVERRIDE"
+            ;;
+        *)
+            die "--mode must be 'env' or 'proxychains'"
+            ;;
+    esac
+fi
 
 if [[ -z "$PROXY_URL" || "$PROXY_URL" == "null" ]]; then
     die "proxy.url is not set in $CONFIG_FILE"

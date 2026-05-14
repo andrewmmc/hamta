@@ -152,6 +152,21 @@ teardown() {
   [[ "$output" =~ "proxy.mode" ]]
 }
 
+@test "dies when --mode is missing a value" {
+  run "$HAMTA" --mode
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "--mode requires" ]]
+}
+
+@test "dies when --mode is unsupported" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false}}' \
+    > "$HOME/.config/hamta/config.json"
+  run "$HAMTA" --mode vpn true
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "--mode must be 'env' or 'proxychains'" ]]
+}
+
 @test "dies when verify.enabled is not a boolean" {
   mkdir -p "$HOME/.config/hamta"
   echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":"yes","expected_country":"JP"}}' \
@@ -196,6 +211,55 @@ teardown() {
   [[ "$output" =~ "HTTPS_PROXY=http://127.0.0.1:9999" ]]
   [[ "$output" =~ "ALL_PROXY=http://127.0.0.1:9999" ]]
   [[ "$output" =~ "NODE_USE_ENV_PROXY=1" ]]
+}
+
+@test "command line --mode proxychains overrides config env mode" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false,"expected_country":"JP"}}' \
+    > "$HOME/.config/hamta/config.json"
+
+  local MOCK_BIN="$TEST_DIR/mockbin"
+  mkdir -p "$MOCK_BIN"
+  cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
+#!/usr/bin/env bash
+if [[ "$1" != "-f" ]]; then
+  echo "missing -f" >&2
+  exit 2
+fi
+config="$2"
+shift 2
+cat "$config"
+echo "proxychains command: $*"
+"$@"
+MOCKEOF
+  chmod +x "$MOCK_BIN/proxychains4"
+
+  PATH="$MOCK_BIN:$PATH" run "$HAMTA" --mode proxychains echo "override hello"
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "proxy_dns" ]]
+  [[ "$output" =~ "proxychains command: echo override hello" ]]
+  [[ "$output" =~ "override hello" ]]
+}
+
+@test "command line --mode env overrides config proxychains mode" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \
+    > "$HOME/.config/hamta/config.json"
+
+  run "$HAMTA" --mode env env
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "HTTP_PROXY=http://127.0.0.1:9999" ]]
+  [[ "$output" =~ "NODE_USE_ENV_PROXY=1" ]]
+}
+
+@test "double dash allows commands after mode override" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false,"expected_country":"JP"}}' \
+    > "$HOME/.config/hamta/config.json"
+
+  run "$HAMTA" --mode env -- env
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "HTTP_PROXY=http://127.0.0.1:9999" ]]
 }
 
 @test "proxychains mode runs command through generated proxychains config with proxy_dns" {
