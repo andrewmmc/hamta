@@ -96,7 +96,7 @@ hamta bash
 
 On each run, hamta will:
 
-1. Set proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, npm proxy vars, etc.)
+1. Set proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, npm proxy vars, etc.) for `env` mode and for the optional verification check
 2. If `verify.enabled` is `true`, check your public IP country through `ipinfo.io`
 3. Print the proxy endpoint, and the actual public IP/country when verification is enabled
 4. Run the command directly or through `proxychains4`, depending on `proxy.mode`
@@ -134,7 +134,7 @@ Use this for apps that honor `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, or npm pr
 
 ### `proxychains` mode
 
-`proxychains` mode exports the same proxy environment variables, then runs the command through `proxychains4` with a generated config:
+`proxychains` mode runs the command through `proxychains4` with a generated config:
 
 ```json
 {
@@ -156,6 +156,8 @@ brew install proxychains-ng
 ```
 
 Then set `proxy.mode` to `proxychains` in `~/.config/hamta/config.json`.
+
+Before invoking `proxychains4`, hamta clears common proxy environment variables from the wrapped command. This avoids double proxying in tools that also honor `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, npm proxy variables, or `NODE_USE_ENV_PROXY`.
 
 If `proxy.mode` is `proxychains` but `proxychains4` is not installed, hamta exits with:
 

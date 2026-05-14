@@ -228,6 +228,41 @@ MOCKEOF
   [[ "$output" =~ "proxied hello" ]]
 }
 
+@test "proxychains mode clears proxy environment variables before running command" {
+  mkdir -p "$HOME/.config/hamta"
+  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \
+    > "$HOME/.config/hamta/config.json"
+
+  local MOCK_BIN="$TEST_DIR/mockbin"
+  mkdir -p "$MOCK_BIN"
+  cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
+#!/usr/bin/env bash
+shift 2
+"$@"
+MOCKEOF
+  chmod +x "$MOCK_BIN/proxychains4"
+
+  HTTP_PROXY="http://preexisting.example:8080" \
+    HTTPS_PROXY="http://preexisting.example:8080" \
+    ALL_PROXY="http://preexisting.example:8080" \
+    http_proxy="http://preexisting.example:8080" \
+    https_proxy="http://preexisting.example:8080" \
+    npm_config_proxy="http://preexisting.example:8080" \
+    npm_config_https_proxy="http://preexisting.example:8080" \
+    NODE_USE_ENV_PROXY=1 \
+    PATH="$MOCK_BIN:$PATH" run "$HAMTA" env
+
+  [ "$status" -eq 0 ]
+  [[ ! "$output" =~ "HTTP_PROXY=" ]]
+  [[ ! "$output" =~ "HTTPS_PROXY=" ]]
+  [[ ! "$output" =~ "ALL_PROXY=" ]]
+  [[ ! "$output" =~ "http_proxy=" ]]
+  [[ ! "$output" =~ "https_proxy=" ]]
+  [[ ! "$output" =~ "npm_config_proxy=" ]]
+  [[ ! "$output" =~ "npm_config_https_proxy=" ]]
+  [[ ! "$output" =~ "NODE_USE_ENV_PROXY=" ]]
+}
+
 @test "proxychains mode supports socks5h proxy URLs as socks5 with proxy_dns" {
   mkdir -p "$HOME/.config/hamta"
   echo '{"proxy":{"url":"socks5h://127.0.0.1:1080","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \

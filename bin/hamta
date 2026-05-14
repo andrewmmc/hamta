@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.1.1"
+VERSION="1.1.2"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
@@ -172,6 +172,20 @@ set_proxy_env() {
     export NODE_USE_ENV_PROXY=1
 }
 
+clear_proxy_env() {
+    unset ALL_PROXY
+    unset all_proxy
+    unset HTTP_PROXY
+    unset HTTPS_PROXY
+    unset http_proxy
+    unset https_proxy
+    unset npm_config_proxy
+    unset npm_config_https_proxy
+    unset NPM_CONFIG_PROXY
+    unset NPM_CONFIG_HTTPS_PROXY
+    unset NODE_USE_ENV_PROXY
+}
+
 proxy_endpoint() {
     local endpoint="$PROXY_URL"
     endpoint="${endpoint#*://}"
@@ -260,6 +274,7 @@ quiet_mode
 $proxy_type $host_port$auth
 EOF
 
+    clear_proxy_env
     proxychains4 -f "$proxychains_config" "$CMD" "$@"
 }
 
