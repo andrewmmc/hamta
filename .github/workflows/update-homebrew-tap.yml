@@ -1,0 +1,99 @@
+name: Update Homebrew tap
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "hamta version/tag to publish, e.g. 1.1.0"
+        required: true
+        type: string
+
+jobs:
+  update-homebrew-tap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate version input
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must look like 1.1.0"
+            exit 1
+          fi
+
+      - name: Compute tarball SHA256
+        id: release
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          url="https://github.com/andrewmmc/hamta/archive/refs/tags/${version}.tar.gz"
+
+          curl -fsSL "$url" -o hamta.tar.gz
+          sha256="$(sha256sum hamta.tar.gz | awk '{print $1}')"
+
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Clone Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN || vars.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HOMEBREW_TAP_TOKEN:-}" ]]; then
+            echo "HOMEBREW_TAP_TOKEN is not set. Add it as an Actions secret with Contents read/write access to andrewmmc/homebrew-tap."
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/andrewmmc/homebrew-tap.git" homebrew-tap
+
+      - name: Update formula
+        working-directory: homebrew-tap
+        env:
+          HAMTA_URL: ${{ steps.release.outputs.url }}
+          HAMTA_SHA256: ${{ steps.release.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path("Formula/hamta.rb")
+          text = path.read_text()
+
+          url = os.environ["HAMTA_URL"]
+          sha256 = os.environ["HAMTA_SHA256"]
+
+          text = re.sub(
+              r'url "https://github\.com/andrewmmc/hamta/archive/refs/tags/[^"]+\.tar\.gz"',
+              f'url "{url}"',
+              text,
+          )
+          text = re.sub(
+              r'sha256 "[0-9a-f]{64}"',
+              f'sha256 "{sha256}"',
+              text,
+          )
+
+          path.write_text(text)
+          PY
+
+      - name: Commit and push tap update
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "Formula already up to date for ${version}"
+            exit 0
+          fi
+
+          git add Formula/hamta.rb
+          git commit -m "feat: update hamta to ${version}"
+          git push
