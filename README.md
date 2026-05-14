@@ -10,35 +10,38 @@ It is useful when you want one-off commands such as coding agents, package manag
 
 ```bash
 brew install andrewmmc/tap/hamta
-
 hamta init
 $EDITOR ~/.config/hamta/config.json
-
 hamta curl https://ipinfo.io
 ```
 
-## Install
+## Install with Homebrew
 
-With Homebrew:
+Install directly from the tap:
 
 ```bash
 brew install andrewmmc/tap/hamta
 ```
 
-From source:
+Or tap the repository first:
 
 ```bash
-git clone https://github.com/andrewmmc/hamta.git
-cd hamta
-make install                 # to /usr/local/bin
-make install PREFIX=$HOME/.local  # user-local install
+brew tap andrewmmc/tap
+brew install hamta
 ```
 
-Make sure `$HOME/.local/bin` is on your `PATH` if you use the user-local install.
+Upgrade later with:
 
-Requires `jq` and `curl`. `proxy.mode: "proxychains"` also requires `proxychains-ng` / `proxychains4`.
+```bash
+brew update
+brew upgrade hamta
+```
 
-## Setup
+Homebrew installs the required runtime dependencies, `jq` and `curl`.
+
+## Configure hamta
+
+Create the config file:
 
 ```bash
 hamta init                   # creates ~/.config/hamta/config.json
@@ -57,6 +60,55 @@ Edit `~/.config/hamta/config.json` to set your proxy URL and expected country:
     "expected_country": "JP"
   }
 }
+```
+
+Use `hamta config` to print the current config:
+
+```bash
+hamta config
+```
+
+Set `verify.enabled` to `false` to skip the IP country check:
+
+```json
+{
+  "proxy": {
+    "url": "http://127.0.0.1:1087",
+    "mode": "env"
+  },
+  "verify": {
+    "enabled": false
+  }
+}
+```
+
+## Use hamta
+
+Prefix any command with `hamta`:
+
+```bash
+hamta curl https://ipinfo.io
+hamta npm install react
+hamta opencode
+hamta claude
+hamta bash
+```
+
+On each run, hamta will:
+
+1. Set proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, npm proxy vars, etc.)
+2. If `verify.enabled` is `true`, check your public IP country through `ipinfo.io`
+3. Print the proxy endpoint, and the actual public IP/country when verification is enabled
+4. Run the command directly or through `proxychains4`, depending on `proxy.mode`
+
+Example output with verification enabled:
+
+```text
+Running IP check via ipinfo.io...
+...
+Country: JP ✓
+Running with proxy 127.0.0.1:1087; actual IP 203.0.113.10 (JP)
+Running curl...
 ```
 
 `proxy.mode` can be `env` or `proxychains`.
@@ -103,6 +155,8 @@ Use this for many TCP CLI apps that ignore proxy environment variables. Install 
 brew install proxychains-ng
 ```
 
+Then set `proxy.mode` to `proxychains` in `~/.config/hamta/config.json`.
+
 If `proxy.mode` is `proxychains` but `proxychains4` is not installed, hamta exits with:
 
 ```text
@@ -118,23 +172,6 @@ Mode comparison:
 | `env` | Direct `exec` with proxy environment variables | none beyond `jq`/`curl` | No | No |
 | `proxychains` | Via `proxychains4 -f <generated-config>` | `proxychains-ng` | Often, for TCP apps | Uses `proxy_dns` for intercepted lookups |
 
-## Usage
-
-```bash
-hamta opencode                # run opencode through proxy
-hamta claude                  # run claude through proxy
-hamta npm install react       # proxy npm too
-hamta --help                  # show help
-hamta config                  # print current config
-```
-
-On each run, hamta will:
-1. Set proxy environment variables (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, npm_config_proxy, etc.)
-2. Verify the proxy is working by checking your IP country via `ipinfo.io`
-3. Execute the command directly or through `proxychains4`, depending on `proxy.mode`
-
-Set `verify.enabled` to `false` to skip the IP country check.
-
 ## DNS leaks
 
 In `env` mode, hamta cannot prevent DNS leaks for apps that ignore proxy environment variables or resolve names locally. It only provides proxy environment variables.
@@ -146,6 +183,35 @@ proxy_dns
 ```
 
 That tells proxychains to proxy DNS resolution for intercepted hostname lookups. This reduces DNS leaks for many TCP CLI apps, but it is not a perfect system-wide guarantee: apps that bypass proxychains injection, use unsupported UDP paths, or are protected by OS restrictions may still bypass it. For the strongest guarantee, use a tun/VPN-style transparent proxy or OS-level firewall/routing rules.
+
+## Developer workflow
+
+Install from source:
+
+```bash
+git clone https://github.com/andrewmmc/hamta.git
+cd hamta
+make install                     # installs to /usr/local/bin
+make install PREFIX=$HOME/.local # user-local install
+```
+
+Make sure `$HOME/.local/bin` is on your `PATH` if you use the user-local install.
+
+Run checks:
+
+```bash
+bash -n bin/hamta
+bats test/hamta.bats
+```
+
+Useful manual test commands:
+
+```bash
+HOME=/tmp/hamta_test ./bin/hamta init
+HOME=/tmp/hamta_test ./bin/hamta config
+./bin/hamta --help
+./bin/hamta --version
+```
 
 ## Flow
 
