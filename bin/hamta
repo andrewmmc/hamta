@@ -280,10 +280,6 @@ EOF
 }
 
 verify_proxy() {
-    echo -e "${CYAN}HTTP_PROXY${NC}  $HTTP_PROXY"
-    echo -e "${CYAN}HTTPS_PROXY${NC} $HTTPS_PROXY"
-    echo ""
-
     local ip_info
     if ! ip_info=$(curl -s --max-time 10 ipinfo.io); then
         die "Failed to reach ipinfo.io. Is the proxy running at $PROXY_URL?"
@@ -302,11 +298,11 @@ verify_proxy() {
         die "${RED}Country mismatch:${NC} expected ${GREEN}$EXPECTED_COUNTRY${NC}, got ${RED}$country${NC}. Proxy may not be working."
     fi
 
-    echo -e "  Country: ${GREEN}$country${NC} ✓"
+    echo -e "  Country: ${GREEN}$country${NC}"
     if [[ -n "$ip" ]]; then
-        echo -e "${RED}Running with proxy $(proxy_endpoint); actual IP $ip ($country)${NC}"
+        echo -e "${RED}Running with proxy $(proxy_endpoint); actual IP $ip${NC}"
     else
-        echo -e "${RED}Running with proxy $(proxy_endpoint); actual IP unknown (country $country)${NC}"
+        echo -e "${RED}Running with proxy $(proxy_endpoint); actual IP unknown${NC}"
     fi
 }
 

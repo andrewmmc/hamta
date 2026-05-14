@@ -417,8 +417,12 @@ MOCKEOF
   PATH="$MOCK_BIN:$PATH" run "$HAMTA" true
   [ "$status" -eq 0 ]
   [[ "$output" =~ "JP" ]]
+  [[ ! "$output" =~ "✓" ]]
   [[ "$output" =~ "Running with proxy" ]]
   [[ "$output" =~ "actual IP unknown" ]]
+  [[ ! "$output" =~ "country JP" ]]
+  [[ ! "$output" =~ "HTTP_PROXY" ]]
+  [[ ! "$output" =~ "HTTPS_PROXY" ]]
   [[ ! "$output" =~ "Running IP check via" ]]
   [[ ! "$output" =~ '\{"country": "JP"\}' ]]
 }
@@ -442,7 +446,11 @@ MOCKEOF
 
   PATH="$MOCK_BIN:$PATH" run "$HAMTA" true
   [ "$status" -eq 0 ]
-  [[ "$output" =~ "Running with proxy 127.0.0.1:9999; actual IP 203.0.113.10 (JP)" ]]
+  [[ "$output" =~ "Running with proxy 127.0.0.1:9999; actual IP 203.0.113.10" ]]
+  [[ ! "$output" =~ "✓" ]]
+  [[ ! "$output" =~ "(JP)" ]]
+  [[ ! "$output" =~ "HTTP_PROXY" ]]
+  [[ ! "$output" =~ "HTTPS_PROXY" ]]
   [[ ! "$output" =~ "Running IP check via" ]]
   [[ ! "$output" =~ '\{"ip": "203.0.113.10", "country": "JP"\}' ]]
 }
