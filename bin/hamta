@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.1.4"
+VERSION="1.1.6"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
@@ -298,7 +298,7 @@ verify_proxy() {
         die "${RED}Country mismatch:${NC} expected ${GREEN}$EXPECTED_COUNTRY${NC}, got ${RED}$country${NC}. Proxy may not be working."
     fi
 
-    echo -e "  Country: ${GREEN}$country${NC}"
+    echo -e "Country: ${GREEN}$country${NC}"
     if [[ -n "$ip" ]]; then
         echo -e "${RED}Running with proxy $(proxy_endpoint); actual IP $ip${NC}"
     else
