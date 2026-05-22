@@ -23,6 +23,8 @@ hamta is a bash script that wraps commands in a proxy environment. Config is JSO
 
 - Always confirm the current branch before making edits
 - Run `git branch --show-current` before starting work
+- Always commit completed work using clear [Conventional Commits](https://www.conventionalcommits.org/) messages (e.g. `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`)
+- Never run `git push` — publishing is a manual user step
 
 ## Building / Installing
 
