@@ -218,6 +218,21 @@ bash -n bin/hamta
 bats test/hamta.bats
 ```
 
+Bump the version locally:
+
+```bash
+make bump       # patch
+make bump-minor
+make bump-major
+```
+
+The bump script updates `bin/hamta`, creates a commit, and creates a bare semver tag such as `1.1.7`. Push with `git push --follow-tags`, then update the Homebrew formula in `andrewmmc/homebrew-tap` for the new tag. In CI, run the **Bump Version** workflow; by default it runs the tap update job automatically after pushing the tag.
+
+GitHub Actions setup:
+
+- `GITHUB_TOKEN` is provided automatically and needs repository `contents: write` permission for the bump workflow.
+- `HOMEBREW_TAP_TOKEN` must be set as a repository secret or variable with contents read/write access to `andrewmmc/homebrew-tap` for the tap update workflow.
+
 Useful manual test commands:
 
 ```bash

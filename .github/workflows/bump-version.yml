@@ -1,0 +1,62 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version component to bump
+        required: false
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      update_homebrew_tap:
+        description: Update andrewmmc/homebrew-tap after pushing the tag
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        run: bash scripts/bump-version.sh "${{ inputs.bump }}"
+
+      - name: Read bumped version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(grep -E '^VERSION="[0-9]+\.[0-9]+\.[0-9]+"$' bin/hamta | sed -E 's/^VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$/\1/')"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Push commit and tag
+        run: git push --follow-tags
+
+  update-homebrew-tap:
+    needs: bump
+    if: ${{ inputs.update_homebrew_tap }}
+    uses: ./.github/workflows/update-homebrew-tap.yml
+    with:
+      version: ${{ needs.bump.outputs.version }}
+    secrets: inherit

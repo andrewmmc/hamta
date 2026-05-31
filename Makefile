@@ -1,6 +1,6 @@
 PREFIX ?= /usr/local
 
-.PHONY: install uninstall
+.PHONY: install uninstall bump bump-minor bump-major
 
 install:
 	install -d "$(PREFIX)/bin"
@@ -14,3 +14,12 @@ uninstall:
 	rm -f "$(PREFIX)/bin/hamta"
 	rm -rf "$(PREFIX)/share/hamta"
 	@echo "hamta uninstalled."
+
+bump:
+	./scripts/bump-version.sh patch
+
+bump-minor:
+	./scripts/bump-version.sh minor
+
+bump-major:
+	./scripts/bump-version.sh major
