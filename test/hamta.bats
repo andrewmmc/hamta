@@ -100,6 +100,162 @@ write_verify_config() {
   [[ "$output" =~ "not found" ]]
 }
 
+# doctor
+
+@test "doctor reports dependencies config proxy and exit IP" {
+  write_verify_config
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  cat > "$MOCK_BIN/curl" <<'MOCKEOF'
+#!/usr/bin/env bash
+if [[ "$*" =~ "ipinfo.io" ]]; then
+  echo '{"ip": "203.0.113.10", "country": "JP"}'
+else
+  /usr/bin/curl "$@"
+fi
+MOCKEOF
+  chmod +x "$MOCK_BIN/curl"
+
+  PATH="$MOCK_BIN:$PATH" run "$HAMTA" doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "hamta doctor" ]]
+  [[ "$output" =~ "jq installed" ]]
+  [[ "$output" =~ "curl installed" ]]
+  [[ "$output" =~ "config valid" ]]
+  [[ "$output" =~ "proxy reachability" ]]
+  [[ "$output" =~ "current exit IP: 203.0.113.10" ]]
+  [[ "$output" =~ "current exit country: JP" ]]
+  [[ "$output" =~ "country verification: expected JP" ]]
+}
+
+@test "doctor reports invalid config without checking proxy" {
+  write_config '{invalid json'
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  cat > "$MOCK_BIN/curl" <<'MOCKEOF'
+#!/usr/bin/env bash
+echo "curl should not be called"
+exit 1
+MOCKEOF
+  chmod +x "$MOCK_BIN/curl"
+
+  PATH="$MOCK_BIN:$PATH" run "$HAMTA" doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "config validity" ]]
+  [[ "$output" =~ "not valid JSON" ]]
+  [[ ! "$output" =~ "curl should not be called" ]]
+}
+
+@test "doctor fails when proxychains mode needs missing proxychains4" {
+  write_proxychains_config
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  ln -s /bin/bash "$MOCK_BIN/bash"
+  ln -s "$(command -v jq)" "$MOCK_BIN/jq"
+  cat > "$MOCK_BIN/curl" <<'MOCKEOF'
+#!/usr/bin/env bash
+if [[ "$*" =~ "ipinfo.io" ]]; then
+  echo '{"ip": "203.0.113.10", "country": "JP"}'
+else
+  /usr/bin/curl "$@"
+fi
+MOCKEOF
+  chmod +x "$MOCK_BIN/curl"
+
+  PATH="$MOCK_BIN" run "$HAMTA" doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "proxychains4 missing" ]]
+  [[ "$output" =~ "proxychains4 required" ]]
+}
+
+@test "doctor reports missing jq instead of failing before diagnostics" {
+  write_verify_config
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  ln -s /bin/bash "$MOCK_BIN/bash"
+  ln -s "$(command -v curl)" "$MOCK_BIN/curl"
+
+  PATH="$MOCK_BIN" run "$HAMTA" doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "hamta doctor" ]]
+  [[ "$output" =~ "jq missing" ]]
+  [[ "$output" =~ "config validity: skipped" ]]
+  [[ ! "$output" =~ "Missing required dependencies" ]]
+}
+
+# verify
+
+@test "verify tests proxy without running a command" {
+  write_verify_config
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  cat > "$MOCK_BIN/curl" <<'MOCKEOF'
+#!/usr/bin/env bash
+if [[ "$*" =~ "ipinfo.io" ]]; then
+  echo '{"ip": "203.0.113.10", "country": "JP"}'
+else
+  /usr/bin/curl "$@"
+fi
+MOCKEOF
+  chmod +x "$MOCK_BIN/curl"
+
+  PATH="$MOCK_BIN:$PATH" run "$HAMTA" verify
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "Country:" ]]
+  [[ "$output" =~ "JP" ]]
+  [[ "$output" =~ "actual IP 203.0.113.10" ]]
+  [[ ! "$output" =~ "Running true" ]]
+}
+
+@test "verify succeeds without expected country when verification is disabled" {
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"}}'
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  cat > "$MOCK_BIN/curl" <<'MOCKEOF'
+#!/usr/bin/env bash
+if [[ "$*" =~ "ipinfo.io" ]]; then
+  echo '{"ip": "203.0.113.20", "country": "US"}'
+else
+  /usr/bin/curl "$@"
+fi
+MOCKEOF
+  chmod +x "$MOCK_BIN/curl"
+
+  PATH="$MOCK_BIN:$PATH" run "$HAMTA" verify
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "US" ]]
+  [[ "$output" =~ "actual IP 203.0.113.20" ]]
+  [[ ! "$output" =~ "mismatch" ]]
+}
+
+@test "verify fails when enabled expected country does not match" {
+  write_verify_config
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  cat > "$MOCK_BIN/curl" <<'MOCKEOF'
+#!/usr/bin/env bash
+if [[ "$*" =~ "ipinfo.io" ]]; then
+  echo '{"ip": "203.0.113.20", "country": "US"}'
+else
+  /usr/bin/curl "$@"
+fi
+MOCKEOF
+  chmod +x "$MOCK_BIN/curl"
+
+  PATH="$MOCK_BIN:$PATH" run "$HAMTA" verify
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "Country mismatch" ]]
+  [[ "$output" =~ "expected" ]]
+  [[ "$output" =~ "US" ]]
+}
+
 # no args
 
 @test "no args shows usage" {

@@ -12,6 +12,8 @@ It is useful when you want one-off commands such as coding agents, package manag
 brew install andrewmmc/tap/hamta
 hamta init
 $EDITOR ~/.config/hamta/config.json
+hamta doctor
+hamta verify
 hamta curl https://ipinfo.io
 ```
 
@@ -67,6 +69,22 @@ Use `hamta config` to print the current config:
 ```bash
 hamta config
 ```
+
+Check your setup with `hamta doctor`:
+
+```bash
+hamta doctor
+```
+
+`doctor` reports whether `jq`, `curl`, and `proxychains4` are installed, whether the config is valid, whether the proxy can reach `ipinfo.io`, and the current exit IP/country. `proxychains4` is only required when `proxy.mode` is `proxychains`.
+
+Test proxy verification without running another command:
+
+```bash
+hamta verify
+```
+
+`verify` loads the same config and checks the current exit country/IP through the configured proxy. If `verify.enabled` is `true`, it fails when the exit country does not match `verify.expected_country`; if verification is disabled, it still reports the current exit country/IP without enforcing a country match.
 
 Set `verify.enabled` to `false` to skip the IP country check:
 

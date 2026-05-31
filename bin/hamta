@@ -20,13 +20,17 @@ Usage: hamta [--mode env|proxychains] [--] <command> [args...]
         hamta --help
         hamta --version
         hamta config
+        hamta doctor
+        hamta verify
 
 Options:
   --mode MODE  Override configured mode for this command only
   --help      Show this help message
   --version   Show version
   config      Print current configuration
+  doctor      Check dependencies, config, proxy reachability, and exit IP
   init        Create default config at ~/.config/hamta/config.json
+  verify      Test proxy verification without running a command
 
 Config file: ~/.config/hamta/config.json
 EOF
@@ -40,6 +44,18 @@ die() {
 
 warn() {
     echo -e "${YELLOW}Warning:${NC} $*" >&2
+}
+
+doctor_ok() {
+    echo -e "${GREEN}OK:${NC} $*"
+}
+
+doctor_warn() {
+    echo -e "${YELLOW}WARN:${NC} $*"
+}
+
+doctor_fail() {
+    echo -e "${RED}FAIL:${NC} $*" >&2
 }
 
 check_deps() {
@@ -110,28 +126,42 @@ show_config() {
     cat "$CONFIG_FILE"
 }
 
-load_config() {
+config_invalid() {
+    CONFIG_ERROR="$*"
+    return 1
+}
+
+read_config() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
-        die "Config not found at $CONFIG_FILE. Run 'hamta init' first."
+        config_invalid "Config not found at $CONFIG_FILE. Run 'hamta init' first."
+        return 1
     fi
 
     if ! jq empty "$CONFIG_FILE" >/dev/null 2>&1; then
-        die "Config is not valid JSON: $CONFIG_FILE"
+        config_invalid "Config is not valid JSON: $CONFIG_FILE"
+        return 1
     fi
 
     local proxy_type
     proxy_type="$(jq -r 'try (.proxy.url | type) catch "invalid"' "$CONFIG_FILE")"
     if [[ "$proxy_type" == "null" ]]; then
-        die "proxy.url is not set in $CONFIG_FILE"
+        config_invalid "proxy.url is not set in $CONFIG_FILE"
+        return 1
     fi
     if [[ "$proxy_type" != "string" ]]; then
-        die "proxy.url must be a non-empty string in $CONFIG_FILE"
+        config_invalid "proxy.url must be a non-empty string in $CONFIG_FILE"
+        return 1
     fi
 
     PROXY_URL=$(jq -r '.proxy.url' "$CONFIG_FILE")
+    if [[ -z "$PROXY_URL" || "$PROXY_URL" == "null" ]]; then
+        config_invalid "proxy.url is not set in $CONFIG_FILE"
+        return 1
+    fi
 
     if [[ "$(jq -r 'try ((.proxy.mode // "env") | type) catch "invalid"' "$CONFIG_FILE")" != "string" ]]; then
-        die "proxy.mode must be a string in $CONFIG_FILE"
+        config_invalid "proxy.mode must be a string in $CONFIG_FILE"
+        return 1
     fi
 
     PROXY_MODE=$(jq -r '.proxy.mode // "env"' "$CONFIG_FILE")
@@ -139,12 +169,14 @@ load_config() {
         env|proxychains)
             ;;
         *)
-            die "proxy.mode must be 'env' or 'proxychains' in $CONFIG_FILE"
+            config_invalid "proxy.mode must be 'env' or 'proxychains' in $CONFIG_FILE"
+            return 1
             ;;
     esac
 
     if [[ "$(jq -r 'try ((.verify.enabled // false) | type) catch "invalid"' "$CONFIG_FILE")" != "boolean" ]]; then
-        die "verify.enabled must be true or false in $CONFIG_FILE"
+        config_invalid "verify.enabled must be true or false in $CONFIG_FILE"
+        return 1
     fi
 
     VERIFY_ENABLED=$(jq -r '.verify.enabled // false' "$CONFIG_FILE")
@@ -152,8 +184,17 @@ load_config() {
 
     if [[ "$VERIFY_ENABLED" == "true" ]]; then
         if [[ "$(jq -r 'try (.verify.expected_country | type) catch "invalid"' "$CONFIG_FILE")" != "string" || -z "$EXPECTED_COUNTRY" ]]; then
-            die "verify.expected_country must be a non-empty string when verify.enabled is true in $CONFIG_FILE"
+            config_invalid "verify.expected_country must be a non-empty string when verify.enabled is true in $CONFIG_FILE"
+            return 1
         fi
+    fi
+
+    return 0
+}
+
+load_config() {
+    if ! read_config; then
+        die "$CONFIG_ERROR"
     fi
 }
 
@@ -253,6 +294,19 @@ require_proxychains() {
     fi
 }
 
+apply_mode_override() {
+    if [[ -n "$CLI_MODE_OVERRIDE" ]]; then
+        case "$CLI_MODE_OVERRIDE" in
+            env|proxychains)
+                PROXY_MODE="$CLI_MODE_OVERRIDE"
+                ;;
+            *)
+                die "--mode must be 'env' or 'proxychains'"
+                ;;
+        esac
+    fi
+}
+
 cleanup_proxychains_config() {
     if [[ -n "$PROXYCHAINS_CONFIG" ]]; then
         rm -f "$PROXYCHAINS_CONFIG"
@@ -287,6 +341,7 @@ EOF
 
 verify_proxy() {
     local ip_info
+    local check_expected="${1:-true}"
     if ! ip_info=$(curl -s --max-time 10 ipinfo.io); then
         die "Failed to reach ipinfo.io. Is the proxy running at $PROXY_URL?"
     fi
@@ -300,7 +355,7 @@ verify_proxy() {
         die "Could not determine country from ipinfo.io response."
     fi
 
-    if [[ "$country" != "$EXPECTED_COUNTRY" ]]; then
+    if [[ "$check_expected" == "true" && "$country" != "$EXPECTED_COUNTRY" ]]; then
         die "${RED}Country mismatch:${NC} expected ${GREEN}$EXPECTED_COUNTRY${NC}, got ${RED}$country${NC}. Proxy may not be working."
     fi
 
@@ -312,7 +367,121 @@ verify_proxy() {
     fi
 }
 
-check_deps
+verify_command() {
+    check_deps
+    load_config
+    apply_mode_override
+
+    if [[ "$PROXY_MODE" == "proxychains" ]]; then
+        require_proxychains
+    fi
+
+    set_proxy_env
+    verify_proxy "$VERIFY_ENABLED"
+}
+
+doctor_proxy() {
+    local failed=0
+    local ip_info
+    local ip
+    local country
+
+    set_proxy_env
+
+    if ! ip_info=$(curl -s --max-time 10 ipinfo.io); then
+        doctor_fail "proxy reachability: failed to reach ipinfo.io through $PROXY_URL"
+        return 1
+    fi
+
+    ip=$(echo "$ip_info" | jq -r '.ip // empty')
+    country=$(echo "$ip_info" | jq -r '.country // empty')
+
+    if [[ -z "$country" ]]; then
+        doctor_fail "current exit IP: could not determine country from ipinfo.io response"
+        return 1
+    fi
+
+    doctor_ok "proxy reachability: reached ipinfo.io through $(proxy_endpoint)"
+    if [[ -n "$ip" ]]; then
+        doctor_ok "current exit IP: $ip"
+    else
+        doctor_warn "current exit IP: unknown"
+    fi
+    doctor_ok "current exit country: $country"
+
+    if [[ "$VERIFY_ENABLED" == "true" && "$country" != "$EXPECTED_COUNTRY" ]]; then
+        doctor_fail "country verification: expected $EXPECTED_COUNTRY, got $country"
+        failed=1
+    elif [[ "$VERIFY_ENABLED" == "true" ]]; then
+        doctor_ok "country verification: expected $EXPECTED_COUNTRY"
+    else
+        doctor_warn "country verification: disabled"
+    fi
+
+    return "$failed"
+}
+
+doctor_command() {
+    local failed=0
+    local has_jq=0
+    local has_curl=0
+    local has_proxychains=0
+
+    echo "hamta doctor"
+
+    if command -v jq &>/dev/null; then
+        doctor_ok "jq installed"
+        has_jq=1
+    else
+        doctor_fail "jq missing"
+        failed=1
+    fi
+
+    if command -v curl &>/dev/null; then
+        doctor_ok "curl installed"
+        has_curl=1
+    else
+        doctor_fail "curl missing"
+        failed=1
+    fi
+
+    if command -v proxychains4 &>/dev/null; then
+        doctor_ok "proxychains4 installed"
+        has_proxychains=1
+    else
+        doctor_warn "proxychains4 missing; required only when proxy.mode is proxychains"
+    fi
+
+    if [[ "$has_jq" -ne 1 ]]; then
+        doctor_fail "config validity: skipped because jq is missing"
+        return 1
+    fi
+
+    if read_config; then
+        doctor_ok "config valid: $CONFIG_FILE"
+    else
+        doctor_fail "config validity: $CONFIG_ERROR"
+        return 1
+    fi
+
+    apply_mode_override
+
+    if [[ "$PROXY_MODE" == "proxychains" && "$has_proxychains" -ne 1 ]]; then
+        doctor_fail "proxychains4 required by proxy.mode=proxychains"
+        failed=1
+    fi
+
+    if [[ "$has_curl" -ne 1 ]]; then
+        doctor_fail "proxy reachability: skipped because curl is missing"
+        return 1
+    fi
+
+    if ! doctor_proxy; then
+        failed=1
+    fi
+
+    return "$failed"
+}
 
 CLI_MODE_OVERRIDE=""
 
@@ -366,18 +535,22 @@ if [[ -z "$CLI_MODE_OVERRIDE" ]]; then
     esac
 fi
 
+case "$1" in
+    doctor)
+        doctor_command
+        exit
+        ;;
+    verify)
+        verify_command
+        exit
+        ;;
+esac
+
+check_deps
+
 load_config
 
-if [[ -n "$CLI_MODE_OVERRIDE" ]]; then
-    case "$CLI_MODE_OVERRIDE" in
-        env|proxychains)
-            PROXY_MODE="$CLI_MODE_OVERRIDE"
-            ;;
-        *)
-            die "--mode must be 'env' or 'proxychains'"
-            ;;
-    esac
-fi
+apply_mode_override
 
 if [[ -z "$PROXY_URL" || "$PROXY_URL" == "null" ]]; then
     die "proxy.url is not set in $CONFIG_FILE"
