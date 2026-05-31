@@ -4,6 +4,7 @@ set -euo pipefail
 VERSION="1.1.6"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
+PROXYCHAINS_CONFIG=""
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -252,12 +253,17 @@ require_proxychains() {
     fi
 }
 
+cleanup_proxychains_config() {
+    if [[ -n "$PROXYCHAINS_CONFIG" ]]; then
+        rm -f "$PROXYCHAINS_CONFIG"
+    fi
+}
+
 run_with_proxychains() {
     require_proxychains
 
-    local proxychains_config
-    proxychains_config="$(mktemp "${TMPDIR:-/tmp}/hamta-proxychains.XXXXXX")"
-    trap "rm -f '$proxychains_config'" EXIT
+    PROXYCHAINS_CONFIG="$(mktemp "${TMPDIR:-/tmp}/hamta-proxychains.XXXXXX")"
+    trap cleanup_proxychains_config EXIT
 
     local proxy_type
     proxy_type="$(proxychains_type)"
@@ -266,7 +272,7 @@ run_with_proxychains() {
     local auth
     auth="$(proxy_auth)"
 
-    cat > "$proxychains_config" <<EOF
+    cat > "$PROXYCHAINS_CONFIG" <<EOF
 strict_chain
 proxy_dns
 quiet_mode
@@ -276,7 +282,7 @@ $proxy_type $host_port$auth
 EOF
 
     clear_proxy_env
-    proxychains4 -f "$proxychains_config" "$CMD" "$@"
+    proxychains4 -f "$PROXYCHAINS_CONFIG" "$CMD" "$@"
 }
 
 verify_proxy() {
