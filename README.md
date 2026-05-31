@@ -112,8 +112,8 @@ On each run, hamta will:
 Example output with verification enabled:
 
 ```text
-Country: JP ✓
-Running with proxy 127.0.0.1:1087; actual IP 203.0.113.10 (JP)
+Country: JP
+Running with proxy 127.0.0.1:1087; actual IP 203.0.113.10
 Running curl...
 ```
 

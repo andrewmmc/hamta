@@ -11,6 +11,25 @@ teardown() {
   rm -rf "$TEST_DIR"
 }
 
+write_config() {
+  mkdir -p "$HOME/.config/hamta"
+  printf '%s\n' "$1" > "$HOME/.config/hamta/config.json"
+}
+
+write_proxychains_config() {
+  write_config "{\"proxy\":{\"url\":\"${1:-http://127.0.0.1:9999}\",\"mode\":\"proxychains\"},\"verify\":{\"enabled\":false,\"expected_country\":\"JP\"}}"
+}
+
+mock_bin_dir() {
+  local mock_bin="$TEST_DIR/mockbin"
+  mkdir -p "$mock_bin"
+  printf '%s' "$mock_bin"
+}
+
+write_verify_config() {
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}'
+}
+
 # --help / -h
 
 @test "--help exits 0 and shows usage" {
@@ -49,8 +68,7 @@ teardown() {
 }
 
 @test "init with existing config prints message and exits 0" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{}' > "$HOME/.config/hamta/config.json"
+  write_config '{}'
   run "$HAMTA" init
   [ "$status" -eq 0 ]
   [[ "$output" =~ "already exists" ]]
@@ -70,8 +88,7 @@ teardown() {
 # config
 
 @test "config prints config file contents" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"}}' > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"}}'
   run "$HAMTA" config
   [ "$status" -eq 0 ]
   [[ "$output" =~ "http://127.0.0.1:9999" ]]
@@ -94,9 +111,7 @@ teardown() {
 # command not found
 
 @test "unknown command dies with error" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}'
   run "$HAMTA" nonexistentcommand12345
   [ "$status" -eq 1 ]
   [[ "$output" =~ "Command not found" ]]
@@ -105,48 +120,42 @@ teardown() {
 # proxy.url null or empty
 
 @test "dies when proxy.url is null" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":null}}' > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":null}}'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "not set" ]]
 }
 
 @test "dies when proxy.url is empty string" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":""}}' > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":""}}'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "not set" ]]
 }
 
 @test "dies when config is invalid JSON" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{invalid json' > "$HOME/.config/hamta/config.json"
+  write_config '{invalid json'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "not valid JSON" ]]
 }
 
 @test "dies when proxy.url is not a string" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":1087}}' > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":1087}}'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "proxy.url" ]]
 }
 
 @test "dies when proxy.mode is not a string" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":true}}' > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":true}}'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "proxy.mode" ]]
 }
 
 @test "dies when proxy.mode is unsupported" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"vpn"}}' > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"vpn"}}'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "proxy.mode" ]]
@@ -159,27 +168,21 @@ teardown() {
 }
 
 @test "dies when --mode is unsupported" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false}}'
   run "$HAMTA" --mode vpn true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "--mode must be 'env' or 'proxychains'" ]]
 }
 
 @test "dies when verify.enabled is not a boolean" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":"yes","expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":"yes","expected_country":"JP"}}'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "verify.enabled" ]]
 }
 
 @test "dies when verify is enabled without expected country" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true}}'
   run "$HAMTA" true
   [ "$status" -eq 1 ]
   [[ "$output" =~ "verify.expected_country" ]]
@@ -188,9 +191,7 @@ teardown() {
 # run with verify disabled -> exec path
 
 @test "runs command with verify disabled" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"}}'
   run "$HAMTA" echo "hello world"
   [ "$status" -eq 0 ]
   [[ "$output" =~ "hello world" ]]
@@ -202,9 +203,7 @@ teardown() {
 # proxy env vars are exported
 
 @test "exports proxy environment variables" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":false,"expected_country":"JP"}}'
   run "$HAMTA" env
   [ "$status" -eq 0 ]
   [[ "$output" =~ "HTTP_PROXY=http://127.0.0.1:9999" ]]
@@ -214,12 +213,10 @@ teardown() {
 }
 
 @test "command line --mode proxychains overrides config env mode" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false,"expected_country":"JP"}}'
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
 #!/usr/bin/env bash
 if [[ "$1" != "-f" ]]; then
@@ -242,9 +239,7 @@ MOCKEOF
 }
 
 @test "command line --mode env overrides config proxychains mode" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_proxychains_config
 
   run "$HAMTA" --mode env env
   [ "$status" -eq 0 ]
@@ -253,9 +248,7 @@ MOCKEOF
 }
 
 @test "double dash allows commands after mode override" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"env"},"verify":{"enabled":false,"expected_country":"JP"}}'
 
   run "$HAMTA" --mode env -- env
   [ "$status" -eq 0 ]
@@ -263,12 +256,10 @@ MOCKEOF
 }
 
 @test "proxychains mode runs command through generated proxychains config with proxy_dns" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_proxychains_config
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
 #!/usr/bin/env bash
 if [[ "$1" != "-f" ]]; then
@@ -293,12 +284,10 @@ MOCKEOF
 }
 
 @test "proxychains mode clears proxy environment variables before running command" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_proxychains_config
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
 #!/usr/bin/env bash
 shift 2
@@ -328,12 +317,10 @@ MOCKEOF
 }
 
 @test "proxychains mode supports socks5h proxy URLs as socks5 with proxy_dns" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"socks5h://127.0.0.1:1080","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_proxychains_config "socks5h://127.0.0.1:1080"
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
 #!/usr/bin/env bash
 config="$2"
@@ -350,12 +337,10 @@ MOCKEOF
 }
 
 @test "proxychains mode keeps proxy credentials in generated config" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://user:pass@127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":false,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_proxychains_config "http://user:pass@127.0.0.1:9999"
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
 #!/usr/bin/env bash
 config="$2"
@@ -372,12 +357,10 @@ MOCKEOF
 }
 
 @test "proxychains mode fails before IP verification when proxychains4 is missing" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":true,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains"},"verify":{"enabled":true,"expected_country":"JP"}}'
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   ln -s /bin/bash "$MOCK_BIN/bash"
   ln -s "$(command -v jq)" "$MOCK_BIN/jq"
   cat > "$MOCK_BIN/curl" <<'MOCKEOF'
@@ -397,13 +380,11 @@ MOCKEOF
 # verify.proxy is called when enabled (mock curl)
 
 @test "verify proxy succeeds with matching country" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_verify_config
 
   # Create a mock curl that returns JP country
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/curl" <<'MOCKEOF'
 #!/usr/bin/env bash
 if [[ "$*" =~ "ipinfo.io" ]]; then
@@ -428,12 +409,10 @@ MOCKEOF
 }
 
 @test "verify proxy shows proxy IP and country before running command" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_verify_config
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/curl" <<'MOCKEOF'
 #!/usr/bin/env bash
 if [[ "$*" =~ "ipinfo.io" ]]; then
@@ -456,12 +435,10 @@ MOCKEOF
 }
 
 @test "verify proxy fails with wrong country" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_verify_config
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/curl" <<'MOCKEOF'
 #!/usr/bin/env bash
 if [[ "$*" =~ "ipinfo.io" ]]; then
@@ -478,12 +455,10 @@ MOCKEOF
 }
 
 @test "verify proxy fails when curl fails" {
-  mkdir -p "$HOME/.config/hamta"
-  echo '{"proxy":{"url":"http://127.0.0.1:9999"},"verify":{"enabled":true,"expected_country":"JP"}}' \
-    > "$HOME/.config/hamta/config.json"
+  write_verify_config
 
-  local MOCK_BIN="$TEST_DIR/mockbin"
-  mkdir -p "$MOCK_BIN"
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
   cat > "$MOCK_BIN/curl" <<'MOCKEOF'
 #!/usr/bin/env bash
 exit 1

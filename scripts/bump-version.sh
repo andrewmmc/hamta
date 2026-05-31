@@ -5,10 +5,23 @@ set -euo pipefail
 
 BUMP="${1:-patch}"
 VERSION_FILE="bin/hamta"
+VERSION_PATTERN='^VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$'
 
 usage() {
-    echo "Usage: $0 [patch|minor|major]" >&2
+    echo "Usage: $0 [patch|minor|major|current]" >&2
 }
+
+current_version() {
+    local version_line
+    version_line="$(grep -E "$VERSION_PATTERN" "$VERSION_FILE")"
+    version_line="${version_line#VERSION=\"}"
+    printf '%s\n' "${version_line%\"}"
+}
+
+if [[ "$BUMP" == "current" ]]; then
+    current_version
+    exit 0
+fi
 
 if [[ "$BUMP" != "patch" && "$BUMP" != "minor" && "$BUMP" != "major" ]]; then
     usage
@@ -20,7 +33,7 @@ if [[ -n "$(git status --porcelain)" ]]; then
     exit 1
 fi
 
-current=$(grep -E '^VERSION="[0-9]+\.[0-9]+\.[0-9]+"$' "$VERSION_FILE" | sed -E 's/^VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$/\1/')
+current="$(current_version)"
 IFS='.' read -r major minor patch <<< "$current"
 
 case "$BUMP" in

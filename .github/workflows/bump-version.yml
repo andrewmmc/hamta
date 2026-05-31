@@ -47,7 +47,7 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          version="$(grep -E '^VERSION="[0-9]+\.[0-9]+\.[0-9]+"$' bin/hamta | sed -E 's/^VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$/\1/')"
+          version="$(bash scripts/bump-version.sh current)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Push commit and tag
