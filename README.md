@@ -208,9 +208,9 @@ Mode comparison:
 
 ## Local address bypass
 
-hamta always keeps connections to local addresses off the proxy, so local dev servers, databases, and other loopback/LAN services keep working while a command runs through hamta.
+hamta keeps connections to local addresses off the proxy where possible, so local dev servers, databases, and other loopback/LAN services keep working while a command runs through hamta.
 
-- In `env` mode, hamta exports `NO_PROXY`/`no_proxy` including `localhost`, `127.0.0.1`, and `::1`.
+- In `env` mode, hamta exports `NO_PROXY`/`no_proxy` (for tools that honor it) including `localhost`, `127.0.0.1`, and `::1`.
 - In `proxychains` mode, hamta adds `localnet` entries for loopback and private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`) so proxychains connects to them directly instead of through the chain.
 
 Add extra hosts, IPs, or CIDR ranges with the optional `proxy.no_proxy` field. It accepts either a comma-separated string or an array of strings:
