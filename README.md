@@ -204,6 +204,27 @@ Mode comparison:
 | `env` | Direct `exec` with proxy environment variables | none beyond `jq`/`curl` | No | No |
 | `proxychains` | Via `proxychains4 -f <generated-config>` | `proxychains-ng` | Often, for TCP apps | Uses `proxy_dns` for intercepted lookups |
 
+## Local address bypass
+
+hamta always keeps connections to local addresses off the proxy, so local dev servers, databases, and other loopback/LAN services keep working while a command runs through hamta.
+
+- In `env` mode, hamta exports `NO_PROXY`/`no_proxy` including `localhost`, `127.0.0.1`, and `::1`.
+- In `proxychains` mode, hamta adds `localnet` entries for loopback and private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`) so proxychains connects to them directly instead of through the chain.
+
+Add extra hosts, IPs, or CIDR ranges with the optional `proxy.no_proxy` field. It accepts either a comma-separated string or an array of strings:
+
+```json
+{
+  "proxy": {
+    "url": "http://127.0.0.1:1087",
+    "mode": "env",
+    "no_proxy": ["*.internal.example", "10.42.0.0/16", "registry.local"]
+  }
+}
+```
+
+The configured entries are merged with the built-in defaults. In `env` mode all entries are added to `NO_PROXY`; in `proxychains` mode only entries that are IP addresses or CIDR/netmask ranges become additional `localnet` rules (hostname/domain entries are ignored there, since proxychains matches on addresses).
+
 ## DNS leaks
 
 In `env` mode, hamta cannot prevent DNS leaks for apps that ignore proxy environment variables or resolve names locally. It only provides proxy environment variables.

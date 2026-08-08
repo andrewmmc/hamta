@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.1.6"
+VERSION="1.2.0"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 PROXYCHAINS_CONFIG=""
+NO_PROXY_CONFIG=""
+
+# Addresses that must always bypass the proxy so that connections to local
+# services (dev servers, databases, etc.) are not routed through it.
+DEFAULT_NO_PROXY="localhost,127.0.0.1,::1"
+DEFAULT_LOCALNET="127.0.0.0/255.0.0.0 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0 ::1/128"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -174,6 +180,28 @@ read_config() {
             ;;
     esac
 
+    NO_PROXY_CONFIG=""
+    local no_proxy_type
+    no_proxy_type="$(jq -r 'try (.proxy.no_proxy | type) catch "invalid"' "$CONFIG_FILE")"
+    case "$no_proxy_type" in
+        null)
+            ;;
+        string)
+            NO_PROXY_CONFIG="$(jq -r '.proxy.no_proxy' "$CONFIG_FILE")"
+            ;;
+        array)
+            if [[ "$(jq -r '[.proxy.no_proxy[] | type] | all(. == "string")' "$CONFIG_FILE" 2>/dev/null)" != "true" ]]; then
+                config_invalid "proxy.no_proxy array must contain only strings in $CONFIG_FILE"
+                return 1
+            fi
+            NO_PROXY_CONFIG="$(jq -r '.proxy.no_proxy | join(",")' "$CONFIG_FILE")"
+            ;;
+        *)
+            config_invalid "proxy.no_proxy must be a string or array of strings in $CONFIG_FILE"
+            return 1
+            ;;
+    esac
+
     if [[ "$(jq -r 'try ((.verify.enabled // false) | type) catch "invalid"' "$CONFIG_FILE")" != "boolean" ]]; then
         config_invalid "verify.enabled must be true or false in $CONFIG_FILE"
         return 1
@@ -204,6 +232,17 @@ init_if_missing() {
     fi
 }
 
+build_no_proxy() {
+    local combined="$DEFAULT_NO_PROXY"
+    if [[ -n "${NO_PROXY_CONFIG:-}" ]]; then
+        combined="$combined,$NO_PROXY_CONFIG"
+    fi
+    printf '%s' "$combined" \
+        | tr ',' '\n' \
+        | awk '{ gsub(/^[ \t]+|[ \t]+$/, ""); if (length($0) && !seen[$0]++) print }' \
+        | paste -sd, -
+}
+
 set_proxy_env() {
     export ALL_PROXY="$PROXY_URL"
     export HTTP_PROXY="$PROXY_URL"
@@ -213,6 +252,11 @@ set_proxy_env() {
     export npm_config_proxy="$PROXY_URL"
     export npm_config_https_proxy="$PROXY_URL"
     export NODE_USE_ENV_PROXY=1
+
+    local no_proxy_val
+    no_proxy_val="$(build_no_proxy)"
+    export NO_PROXY="$no_proxy_val"
+    export no_proxy="$no_proxy_val"
 }
 
 clear_proxy_env() {
@@ -227,6 +271,8 @@ clear_proxy_env() {
     unset NPM_CONFIG_PROXY
     unset NPM_CONFIG_HTTPS_PROXY
     unset NODE_USE_ENV_PROXY
+    unset NO_PROXY
+    unset no_proxy
 }
 
 proxy_endpoint() {
@@ -288,6 +334,53 @@ proxychains_host_port() {
     printf '%s %s' "$host" "$port"
 }
 
+to_localnet() {
+    local entry="$1"
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
+    [[ -z "$entry" ]] && return 1
+
+    if [[ "$entry" == *:* ]]; then
+        if [[ "$entry" == */* ]]; then
+            printf '%s' "$entry"
+        else
+            printf '%s/128' "$entry"
+        fi
+        return 0
+    fi
+
+    if [[ "$entry" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        printf '%s/255.255.255.255' "$entry"
+        return 0
+    fi
+
+    if [[ "$entry" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9.]+$ ]]; then
+        printf '%s' "$entry"
+        return 0
+    fi
+
+    return 1
+}
+
+build_localnet() {
+    local entry
+    for entry in $DEFAULT_LOCALNET; do
+        printf 'localnet %s\n' "$entry"
+    done
+
+    if [[ -z "${NO_PROXY_CONFIG:-}" ]]; then
+        return
+    fi
+
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        if entry="$(to_localnet "$line")"; then
+            printf 'localnet %s\n' "$entry"
+        fi
+    done < <(printf '%s\n' "$NO_PROXY_CONFIG" | tr ',' '\n')
+}
+
 require_proxychains() {
     if ! command -v proxychains4 &>/dev/null; then
         die "proxy.mode is proxychains, but proxychains4 was not found. Install proxychains-ng and try again."
@@ -325,11 +418,14 @@ run_with_proxychains() {
     host_port="$(proxychains_host_port)"
     local auth
     auth="$(proxy_auth)"
+    local localnet_block
+    localnet_block="$(build_localnet)"
 
     cat > "$PROXYCHAINS_CONFIG" <<EOF
 strict_chain
 proxy_dns
 quiet_mode
+$localnet_block
 
 [ProxyList]
 $proxy_type $host_port$auth
