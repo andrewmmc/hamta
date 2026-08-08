@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.1.6"
+VERSION="1.2.0"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 PROXYCHAINS_CONFIG=""
+PROXYCHAINS_IPV6_CHECKED=0
+NO_PROXY_CONFIG=""
+
+# Addresses that must always bypass the proxy so that connections to local
+# services (dev servers, databases, etc.) are not routed through it.
+DEFAULT_NO_PROXY="localhost,127.0.0.1,::1"
+DEFAULT_LOCALNET="127.0.0.0/255.0.0.0 10.0.0.0/255.0.0.0 172.16.0.0/255.240.0.0 192.168.0.0/255.255.0.0 ::1/128"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -174,6 +181,28 @@ read_config() {
             ;;
     esac
 
+    NO_PROXY_CONFIG=""
+    local no_proxy_type
+    no_proxy_type="$(jq -r 'try (.proxy.no_proxy | type) catch "invalid"' "$CONFIG_FILE")"
+    case "$no_proxy_type" in
+        null)
+            ;;
+        string)
+            NO_PROXY_CONFIG="$(jq -r '.proxy.no_proxy' "$CONFIG_FILE")"
+            ;;
+        array)
+            if [[ "$(jq -r '[.proxy.no_proxy[] | type] | all(. == "string")' "$CONFIG_FILE" 2>/dev/null)" != "true" ]]; then
+                config_invalid "proxy.no_proxy array must contain only strings in $CONFIG_FILE"
+                return 1
+            fi
+            NO_PROXY_CONFIG="$(jq -r '.proxy.no_proxy | join(",")' "$CONFIG_FILE")"
+            ;;
+        *)
+            config_invalid "proxy.no_proxy must be a string or array of strings in $CONFIG_FILE"
+            return 1
+            ;;
+    esac
+
     if [[ "$(jq -r 'try ((.verify.enabled // false) | type) catch "invalid"' "$CONFIG_FILE")" != "boolean" ]]; then
         config_invalid "verify.enabled must be true or false in $CONFIG_FILE"
         return 1
@@ -204,6 +233,17 @@ init_if_missing() {
     fi
 }
 
+build_no_proxy() {
+    local combined="$DEFAULT_NO_PROXY"
+    if [[ -n "${NO_PROXY_CONFIG:-}" ]]; then
+        combined="$combined,$NO_PROXY_CONFIG"
+    fi
+    printf '%s' "$combined" \
+        | tr ',' '\n' \
+        | awk '{ gsub(/^[ \t]+|[ \t]+$/, ""); if (length($0) && !seen[$0]++) print }' \
+        | paste -sd, -
+}
+
 set_proxy_env() {
     export ALL_PROXY="$PROXY_URL"
     export HTTP_PROXY="$PROXY_URL"
@@ -213,6 +253,11 @@ set_proxy_env() {
     export npm_config_proxy="$PROXY_URL"
     export npm_config_https_proxy="$PROXY_URL"
     export NODE_USE_ENV_PROXY=1
+
+    local no_proxy_val
+    no_proxy_val="$(build_no_proxy)"
+    export NO_PROXY="$no_proxy_val"
+    export no_proxy="$no_proxy_val"
 }
 
 clear_proxy_env() {
@@ -227,6 +272,8 @@ clear_proxy_env() {
     unset NPM_CONFIG_PROXY
     unset NPM_CONFIG_HTTPS_PROXY
     unset NODE_USE_ENV_PROXY
+    unset NO_PROXY
+    unset no_proxy
 }
 
 proxy_endpoint() {
@@ -288,10 +335,140 @@ proxychains_host_port() {
     printf '%s %s' "$host" "$port"
 }
 
+valid_ipv4() {
+    local address="$1"
+    [[ "$address" =~ ^([0-9]+\.){3}[0-9]+$ ]] || return 1
+
+    local octet
+    local octets=()
+    IFS='.' read -r -a octets <<< "$address"
+    [[ ${#octets[@]} -eq 4 ]] || return 1
+    for octet in "${octets[@]}"; do
+        [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
+        (( 10#$octet <= 255 )) || return 1
+    done
+}
+
+to_localnet() {
+    local entry="$1"
+    entry="${entry#"${entry%%[![:space:]]*}"}"
+    entry="${entry%"${entry##*[![:space:]]}"}"
+    [[ -z "$entry" ]] && return 1
+
+    if [[ "$entry" == *:* ]]; then
+        local address="$entry"
+        local prefix="128"
+        if [[ "$entry" == */* ]]; then
+            address="${entry%/*}"
+            prefix="${entry##*/}"
+            [[ "$prefix" =~ ^[0-9]+$ ]] || return 1
+            (( 10#$prefix <= 128 )) || return 1
+        fi
+
+        [[ "$address" =~ ^[0-9A-Fa-f:]+$ ]] || return 1
+
+        local compressed=0
+        local left="$address"
+        local right=""
+        if [[ "$address" == *::* ]]; then
+            [[ "${address#*::}" != *::* ]] || return 1
+            compressed=1
+            left="${address%%::*}"
+            right="${address#*::}"
+        elif [[ "$address" == :* || "$address" == *: ]]; then
+            return 1
+        fi
+
+        local group
+        local group_count=0
+        local groups=()
+        if [[ -n "$left" ]]; then
+            IFS=':' read -r -a groups <<< "$left"
+            for group in "${groups[@]}"; do
+                [[ "$group" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1
+                (( group_count += 1 ))
+            done
+        fi
+        if [[ -n "$right" ]]; then
+            IFS=':' read -r -a groups <<< "$right"
+            for group in "${groups[@]}"; do
+                [[ "$group" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1
+                (( group_count += 1 ))
+            done
+        fi
+
+        if (( compressed == 1 )); then
+            (( group_count < 8 )) || return 1
+        else
+            (( group_count == 8 )) || return 1
+        fi
+
+        printf '%s/%s' "$address" "$prefix"
+        return 0
+    fi
+
+    if valid_ipv4 "$entry"; then
+        printf '%s/255.255.255.255' "$entry"
+        return 0
+    fi
+
+    if [[ "$entry" == */* ]]; then
+        local address="${entry%/*}"
+        local netmask="${entry##*/}"
+        if valid_ipv4 "$address" \
+            && { [[ "$netmask" =~ ^([0-9]|[12][0-9]|3[0-2])$ ]] || valid_ipv4 "$netmask"; }; then
+            printf '%s' "$entry"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+build_localnet() {
+    local entry
+    for entry in $DEFAULT_LOCALNET; do
+        printf 'localnet %s\n' "$entry"
+    done
+
+    if [[ -z "${NO_PROXY_CONFIG:-}" ]]; then
+        return
+    fi
+
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" ]] && continue
+        if entry="$(to_localnet "$line")"; then
+            printf 'localnet %s\n' "$entry"
+        fi
+    done < <(printf '%s\n' "$NO_PROXY_CONFIG" | tr ',' '\n')
+}
+
 require_proxychains() {
     if ! command -v proxychains4 &>/dev/null; then
         die "proxy.mode is proxychains, but proxychains4 was not found. Install proxychains-ng and try again."
     fi
+
+    if [[ "$PROXYCHAINS_IPV6_CHECKED" -eq 1 ]]; then
+        return
+    fi
+
+    local probe_config
+    probe_config="$(mktemp "${TMPDIR:-/tmp}/hamta-proxychains-probe.XXXXXX")"
+    cat > "$probe_config" <<'EOF'
+strict_chain
+quiet_mode
+localnet ::1/128
+
+[ProxyList]
+http 127.0.0.1 1
+EOF
+    if ! proxychains4 -f "$probe_config" jq -n null >/dev/null 2>&1; then
+        rm -f "$probe_config"
+        die "proxychains mode requires proxychains-ng 4.16 or newer for IPv6 local address bypass."
+    fi
+    rm -f "$probe_config"
+    PROXYCHAINS_IPV6_CHECKED=1
 }
 
 apply_mode_override() {
@@ -325,11 +502,14 @@ run_with_proxychains() {
     host_port="$(proxychains_host_port)"
     local auth
     auth="$(proxy_auth)"
+    local localnet_block
+    localnet_block="$(build_localnet)"
 
     cat > "$PROXYCHAINS_CONFIG" <<EOF
 strict_chain
 proxy_dns
 quiet_mode
+$localnet_block
 
 [ProxyList]
 $proxy_type $host_port$auth

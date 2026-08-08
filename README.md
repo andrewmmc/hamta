@@ -179,7 +179,7 @@ Use this for apps that honor `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, or npm pr
 }
 ```
 
-Use this for many TCP CLI apps that ignore proxy environment variables. Install `proxychains-ng` first:
+Use this for many TCP CLI apps that ignore proxy environment variables. This mode requires `proxychains-ng` 4.16 or newer:
 
 ```bash
 brew install proxychains-ng
@@ -195,6 +195,8 @@ If `proxy.mode` is `proxychains` but `proxychains4` is not installed, hamta exit
 Error: proxy.mode is proxychains, but proxychains4 was not found. Install proxychains-ng and try again.
 ```
 
+hamta also checks that `proxychains4` supports IPv6 `localnet` entries and exits with an upgrade message when the installed version is older than 4.16.
+
 Supported proxychains URL schemes are `http://`, `socks4://`, `socks5://`, and `socks5h://`. `socks5h://` is written as a SOCKS5 proxy in the generated proxychains config; DNS leak prevention comes from `proxy_dns`.
 
 Mode comparison:
@@ -203,6 +205,27 @@ Mode comparison:
 |---|---|---|---|---|
 | `env` | Direct `exec` with proxy environment variables | none beyond `jq`/`curl` | No | No |
 | `proxychains` | Via `proxychains4 -f <generated-config>` | `proxychains-ng` | Often, for TCP apps | Uses `proxy_dns` for intercepted lookups |
+
+## Local address bypass
+
+hamta keeps connections to local addresses off the proxy where possible, so local dev servers, databases, and other loopback/LAN services keep working while a command runs through hamta.
+
+- In `env` mode, hamta exports `NO_PROXY`/`no_proxy` (for tools that honor it) including `localhost`, `127.0.0.1`, and `::1`.
+- In `proxychains` mode, hamta adds `localnet` entries for loopback and private ranges (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `::1`) so proxychains connects to them directly instead of through the chain.
+
+Add extra hosts, IPs, or CIDR ranges with the optional `proxy.no_proxy` field. It accepts either a comma-separated string or an array of strings:
+
+```json
+{
+  "proxy": {
+    "url": "http://127.0.0.1:1087",
+    "mode": "env",
+    "no_proxy": ["*.internal.example", "10.42.0.0/16", "registry.local"]
+  }
+}
+```
+
+The configured entries are merged with the built-in defaults. In `env` mode all entries are added to `NO_PROXY`; in `proxychains` mode only entries that are IP addresses or CIDR/netmask ranges become additional `localnet` rules (hostname/domain entries are ignored there, since proxychains matches on addresses).
 
 ## DNS leaks
 
