@@ -341,11 +341,54 @@ to_localnet() {
     [[ -z "$entry" ]] && return 1
 
     if [[ "$entry" == *:* ]]; then
+        local address="$entry"
+        local prefix="128"
         if [[ "$entry" == */* ]]; then
-            printf '%s' "$entry"
-        else
-            printf '%s/128' "$entry"
+            address="${entry%/*}"
+            prefix="${entry##*/}"
+            [[ "$prefix" =~ ^[0-9]+$ ]] || return 1
+            (( 10#$prefix <= 128 )) || return 1
         fi
+
+        [[ "$address" =~ ^[0-9A-Fa-f:]+$ ]] || return 1
+
+        local compressed=0
+        local left="$address"
+        local right=""
+        if [[ "$address" == *::* ]]; then
+            [[ "${address#*::}" != *::* ]] || return 1
+            compressed=1
+            left="${address%%::*}"
+            right="${address#*::}"
+        elif [[ "$address" == :* || "$address" == *: ]]; then
+            return 1
+        fi
+
+        local group
+        local group_count=0
+        local groups=()
+        if [[ -n "$left" ]]; then
+            IFS=':' read -r -a groups <<< "$left"
+            for group in "${groups[@]}"; do
+                [[ "$group" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1
+                (( group_count += 1 ))
+            done
+        fi
+        if [[ -n "$right" ]]; then
+            IFS=':' read -r -a groups <<< "$right"
+            for group in "${groups[@]}"; do
+                [[ "$group" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1
+                (( group_count += 1 ))
+            done
+        fi
+
+        if (( compressed == 1 )); then
+            (( group_count < 8 )) || return 1
+        else
+            (( group_count == 8 )) || return 1
+        fi
+
+        printf '%s/%s' "$address" "$prefix"
         return 0
     fi
 

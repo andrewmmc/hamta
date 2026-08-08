@@ -449,7 +449,7 @@ MOCKEOF
 }
 
 @test "proxychains mode adds configured IP no_proxy entries as localnet and skips hostnames" {
-  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains","no_proxy":["10.42.0.0/16","192.0.2.5","fd00::1","registry.local"]},"verify":{"enabled":false}}'
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains","no_proxy":["10.42.0.0/16","192.0.2.5","fd00::1","2001:db8::/64","registry.local","registry.local:5000"]},"verify":{"enabled":false}}'
 
   local MOCK_BIN
   MOCK_BIN="$(mock_bin_dir)"
@@ -467,6 +467,7 @@ MOCKEOF
   [[ "$output" =~ "localnet 10.42.0.0/16" ]]
   [[ "$output" =~ "localnet 192.0.2.5/255.255.255.255" ]]
   [[ "$output" =~ "localnet fd00::1/128" ]]
+  [[ "$output" =~ "localnet 2001:db8::/64" ]]
   [[ ! "$output" =~ "registry.local" ]]
 }
 

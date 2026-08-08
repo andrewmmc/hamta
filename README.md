@@ -179,7 +179,7 @@ Use this for apps that honor `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, or npm pr
 }
 ```
 
-Use this for many TCP CLI apps that ignore proxy environment variables. Install `proxychains-ng` first:
+Use this for many TCP CLI apps that ignore proxy environment variables. This mode requires `proxychains-ng` 4.16 or newer:
 
 ```bash
 brew install proxychains-ng
