@@ -195,6 +195,8 @@ If `proxy.mode` is `proxychains` but `proxychains4` is not installed, hamta exit
 Error: proxy.mode is proxychains, but proxychains4 was not found. Install proxychains-ng and try again.
 ```
 
+hamta also checks that `proxychains4` supports IPv6 `localnet` entries and exits with an upgrade message when the installed version is older than 4.16.
+
 Supported proxychains URL schemes are `http://`, `socks4://`, `socks5://`, and `socks5h://`. `socks5h://` is written as a SOCKS5 proxy in the generated proxychains config; DNS leak prevention comes from `proxy_dns`.
 
 Mode comparison:

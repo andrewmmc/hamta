@@ -5,6 +5,7 @@ VERSION="1.2.0"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hamta"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 PROXYCHAINS_CONFIG=""
+PROXYCHAINS_IPV6_CHECKED=0
 NO_PROXY_CONFIG=""
 
 # Addresses that must always bypass the proxy so that connections to local
@@ -334,6 +335,20 @@ proxychains_host_port() {
     printf '%s %s' "$host" "$port"
 }
 
+valid_ipv4() {
+    local address="$1"
+    [[ "$address" =~ ^([0-9]+\.){3}[0-9]+$ ]] || return 1
+
+    local octet
+    local octets=()
+    IFS='.' read -r -a octets <<< "$address"
+    [[ ${#octets[@]} -eq 4 ]] || return 1
+    for octet in "${octets[@]}"; do
+        [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
+        (( 10#$octet <= 255 )) || return 1
+    done
+}
+
 to_localnet() {
     local entry="$1"
     entry="${entry#"${entry%%[![:space:]]*}"}"
@@ -392,14 +407,19 @@ to_localnet() {
         return 0
     fi
 
-    if [[ "$entry" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    if valid_ipv4 "$entry"; then
         printf '%s/255.255.255.255' "$entry"
         return 0
     fi
 
-    if [[ "$entry" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9.]+$ ]]; then
-        printf '%s' "$entry"
-        return 0
+    if [[ "$entry" == */* ]]; then
+        local address="${entry%/*}"
+        local netmask="${entry##*/}"
+        if valid_ipv4 "$address" \
+            && { [[ "$netmask" =~ ^([0-9]|[12][0-9]|3[0-2])$ ]] || valid_ipv4 "$netmask"; }; then
+            printf '%s' "$entry"
+            return 0
+        fi
     fi
 
     return 1
@@ -428,6 +448,27 @@ require_proxychains() {
     if ! command -v proxychains4 &>/dev/null; then
         die "proxy.mode is proxychains, but proxychains4 was not found. Install proxychains-ng and try again."
     fi
+
+    if [[ "$PROXYCHAINS_IPV6_CHECKED" -eq 1 ]]; then
+        return
+    fi
+
+    local probe_config
+    probe_config="$(mktemp "${TMPDIR:-/tmp}/hamta-proxychains-probe.XXXXXX")"
+    cat > "$probe_config" <<'EOF'
+strict_chain
+quiet_mode
+localnet ::1/128
+
+[ProxyList]
+http 127.0.0.1 1
+EOF
+    if ! proxychains4 -f "$probe_config" jq -n null >/dev/null 2>&1; then
+        rm -f "$probe_config"
+        die "proxychains mode requires proxychains-ng 4.16 or newer for IPv6 local address bypass."
+    fi
+    rm -f "$probe_config"
+    PROXYCHAINS_IPV6_CHECKED=1
 }
 
 apply_mode_override() {

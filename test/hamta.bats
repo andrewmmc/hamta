@@ -448,8 +448,28 @@ MOCKEOF
   [[ "$output" =~ "localnet ::1/128" ]]
 }
 
+@test "proxychains mode rejects versions without IPv6 localnet support" {
+  write_proxychains_config
+
+  local MOCK_BIN
+  MOCK_BIN="$(mock_bin_dir)"
+  cat > "$MOCK_BIN/proxychains4" <<'MOCKEOF'
+#!/usr/bin/env bash
+if grep -q '^localnet ::1/128$' "$2"; then
+  exit 1
+fi
+shift 2
+"$@"
+MOCKEOF
+  chmod +x "$MOCK_BIN/proxychains4"
+
+  PATH="$MOCK_BIN:$PATH" run "$HAMTA" true
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "requires proxychains-ng 4.16 or newer" ]]
+}
+
 @test "proxychains mode adds configured IP no_proxy entries as localnet and skips hostnames" {
-  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains","no_proxy":["10.42.0.0/16","192.0.2.5","fd00::1","2001:db8::/64","registry.local","registry.local:5000"]},"verify":{"enabled":false}}'
+  write_config '{"proxy":{"url":"http://127.0.0.1:9999","mode":"proxychains","no_proxy":["10.42.0.0/16","192.0.2.5","198.51.100.0/255.255.255.0","fd00::1","2001:db8::/64","registry.local","registry.local:5000","999.1.1.1","192.0.2.0/999","192.0.2.0/999.0.0.0"]},"verify":{"enabled":false}}'
 
   local MOCK_BIN
   MOCK_BIN="$(mock_bin_dir)"
@@ -466,9 +486,13 @@ MOCKEOF
   [ "$status" -eq 0 ]
   [[ "$output" =~ "localnet 10.42.0.0/16" ]]
   [[ "$output" =~ "localnet 192.0.2.5/255.255.255.255" ]]
+  [[ "$output" =~ "localnet 198.51.100.0/255.255.255.0" ]]
   [[ "$output" =~ "localnet fd00::1/128" ]]
   [[ "$output" =~ "localnet 2001:db8::/64" ]]
   [[ ! "$output" =~ "registry.local" ]]
+  [[ ! "$output" =~ "999.1.1.1" ]]
+  [[ ! "$output" =~ "192.0.2.0/999" ]]
+  [[ ! "$output" =~ "192.0.2.0/999.0.0.0" ]]
 }
 
 @test "command line --mode proxychains overrides config env mode" {
